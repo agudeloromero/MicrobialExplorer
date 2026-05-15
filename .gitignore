@@ -1,0 +1,56 @@
+# ── R session files ──────────────────────────────────
+.Rproj.user/
+.Rhistory
+.RData
+.Ruserdata
+*.Rproj
+
+# ── renv (package library is too large) ─────────────
+renv/library/
+renv/staging/
+renv/python/
+
+# ── Cache (regenerated on each run) ─────────────────
+cache/**
+!cache/.gitkeep
+
+# ── Output (regenerated — plots and tables) ─────────
+output/plots/**
+output/tables/**
+!output/plots/.gitkeep
+!output/tables/.gitkeep
+
+# ── Test results (regenerated on each test run) ─────
+test_results/**
+!test_results/.gitkeep
+
+# ── Logs ─────────────────────────────────────────────
+logs/**
+!logs/.gitkeep
+
+# ── Raw data (too large for GitHub) ─────────────────
+data/raw/**
+data/reference/**
+!data/raw/.gitkeep
+!data/reference/.gitkeep
+
+# ── Keep example data (small, needed for demos) ─────
+!data/example/
+
+# ── Large binary files ──────────────────────────────
+*.rds
+*.RDS
+*.pdf
+*.png
+*.jpg
+*.tgz
+*.tar.gz
+
+# ── OS junk ─────────────────────────────────────────
+.DS_Store
+Thumbs.db
+._*
+
+# ── IDE files ────────────────────────────────────────
+.vscode/
+.idea/

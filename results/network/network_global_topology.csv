@@ -1,0 +1,2 @@
+"n_nodes","n_edges","density","mean_degree","clustering_coef","avg_path_length","diameter","modularity","n_components","pct_positive","n_modules"
+21,97,0.4619,9.238,0.8979,1.1441,2.3525979438733,0.4637,1,92.8,2

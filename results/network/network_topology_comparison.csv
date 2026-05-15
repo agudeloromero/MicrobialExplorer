@@ -1,0 +1,10 @@
+"Metric","Healthy","IBD"
+"Nodes",24,24
+"Edges",85,100
+"Density",0.308,0.3623
+"Mean degree",7.083,8.333
+"Clustering coefficient",0.8966,0.9003
+"Avg path length",0.9031,1.1009
+"Modularity",0.5013,0.4382
+"N modules",3,4
+"% positive edges",97.6,91

@@ -1,0 +1,49 @@
+PROJECT: MicrobialExplorer
+DOMAIN: microbialexplorer.org
+AUTHOR: Patricia Agudelo-Romero
+INSTITUTION: The Kids Research Institute Australia
+FOLDER: /Users/pagudeloromero/Library/CloudStorage/OneDrive-TheKidsResearchInstituteAustralia/MicrobiomeWebSite/MicrobialExplorer
+
+STRUCTURE:
+  R/           — 13 files (10 modules + utils + validators + precompute)
+  tests/       — test_all_modules.R + simulate_microbiome_data.R
+  config/      — pipeline_config.R
+  app/         — EMPTY (to be built)
+  
+PACKAGES UNAVAILABLE: ANCOMBC (IT restrictions — no Homebrew on institutional Mac)
+PACKAGES AVAILABLE: picante (Faith's PD), all others including DESeq2, ALDEx2
+
+VALIDATION STATUS:
+  Test suite: 69/69 (100%) on simulated data
+  Real data: 5 datasets tested (GlobalPatterns, enterotype, soilrep, RISK_CCFA)
+  All biological findings consistent with published literature
+
+KEY FUNCTION SIGNATURES:
+  qc_filter_taxa(ps, min_prevalence, min_abundance) → list with $ps_filtered
+  qc_filter_samples(ps, min_reads) → list with $ps_filtered
+  agglomerate_taxa(ps, rank, transform, top_n) → phyloseq directly
+  calculate_alpha_diversity(ps, rarefaction, rare_depth, n_rare) → data.frame
+  compute_distances(ps, methods, rare_depth) → named list of dist objects
+  run_ordination(dist_obj, method, k) → ordination result (NO ps param)
+  run_permanova(dist, ps, formula_rhs, permutations, strata) → uses formula_rhs NOT group_var
+  run_deseq2(ps, group_var, reference, alpha, lfc_threshold) → result data.frame
+  prepare_da_data(ps, rank, min_prevalence, min_count) → phyloseq directly (NO group_var)
+  plot_composition_bars(ps, rank, group_var, facet_var, sort_by, show_legend) → NO top_n param
+  plot_diversity_gradient(diversity_df, metric, x_var, group_var) → uses x_var NOT variable
+  prepare_ml_data(ps, group_var) → NO top_n param
+  correlate_taxa_metadata(ps, rank, meta_vars, transform, method) → uses meta_vars NOT metadata_vars
+  compute_taxa_taxa_correlation(ps, rank, top_n)
+  prepare_network_data(ps, rank, min_prevalence, max_taxa)
+  build_network(ps_net, cor_threshold, p_threshold) → list with $graph, $cor_mat
+  calculate_network_topology(graph, cor_mat, ps_net) → list with $global, $nodes, $community
+    NOTE: return key is $nodes NOT $node_df
+
+KNOWN EDGE CASES (all fixed):
+  - sample_data(ps) returns S4 object → needs special conversion for dplyr
+  - tax_table(ps) coercion can fail → needs tryCatch with @.Data slot access
+  - Genus deduplication → make.unique BEFORE taxa_names assignment
+  - otu_table needs explicit matrix() conversion for vegan functions
+  - phylo/tidytree class conflict → suppressed in utils.R
+  - igraph returns list columns → mutate(across(where(is.list), unlist))
+  - Datasets without taxonomy → disable composition/agglomeration
+  - Relative abundance data → disable alpha/DESeq2/rarefaction
