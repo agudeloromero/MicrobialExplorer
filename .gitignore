@@ -54,3 +54,6 @@ Thumbs.db
 # ── IDE files ────────────────────────────────────────
 .vscode/
 .idea/
+
+# ── Results (regenerated on each run) ─────────────
+results/**

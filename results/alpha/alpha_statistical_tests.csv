@@ -1,8 +1,0 @@
-"metric","test","statistic","p_value","p_adjusted","significance"
-"observed","Wilcoxon rank-sum",347.5,0.86136,0.95618,"ns"
-"chao1","Wilcoxon rank-sum",302,0.52126,0.95618,"ns"
-"shannon","Wilcoxon rank-sum",354.5,0.7625,0.95618,"ns"
-"simpson","Wilcoxon rank-sum",341,0.95617,0.95618,"ns"
-"invsimpson","Wilcoxon rank-sum",341,0.95618,0.95618,"ns"
-"pielou","Wilcoxon rank-sum",344,0.91248,0.95618,"ns"
-"fisher","Wilcoxon rank-sum",329,0.88349,0.95618,"ns"
