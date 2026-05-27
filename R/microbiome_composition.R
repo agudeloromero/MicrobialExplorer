@@ -718,7 +718,7 @@ plot_phylum_drilldown <- function(ps,
   ps_gen <- tax_glom(ps_phy, taxrank = "Genus", NArm = FALSE)
   genera <- as.character(tax_table(ps_gen)[, "Genus"])
   genera[is.na(genera)] <- "Unknown genus"
-  taxa_names(ps_gen) <- genera
+  taxa_names(ps_gen) <- make.unique(genera, sep = "_")
 
   # Keep top N genera
   mean_abund <- rowMeans(as.matrix(otu_table(ps_gen)))
@@ -879,7 +879,7 @@ identify_core_microbiome <- function(ps,
 
   ps_rel <- transform_sample_counts(ps, function(x) x / sum(x))
   ps_gen <- tax_glom(ps_rel, taxrank = "Genus", NArm = FALSE)
-  taxa_names(ps_gen) <- as.character(tax_table(ps_gen)[, "Genus"])
+  taxa_names(ps_gen) <- make.unique(as.character(tax_table(ps_gen)[, "Genus"]), sep = "_")
 
   compute_core <- function(ps_sub, label = "All") {
     otu_mat <- as.matrix(otu_table(ps_sub))
@@ -956,11 +956,11 @@ identify_core_microbiome <- function(ps,
     # Threshold lines
     geom_vline(xintercept = prevalence_cuts,
                linetype = "dashed", colour = "#e74c3c", alpha = 0.6, linewidth = 0.6) +
-    annotate("text", x = prevalence_cuts + 0.01,
-             y = max(prev_plot_df$log_abund) * 0.95,
-             label = paste0(prevalence_cuts * 100, "%"),
-             hjust = 0, size = 2.5, colour = "#e74c3c") +
-    # Label top core taxa
+    geom_text(data = data.frame(x = prevalence_cuts + 0.01,
+                                y = max(prev_plot_df$log_abund) * 0.95,
+                                label = paste0(prevalence_cuts * 100, "%")),
+              aes(x = x, y = y, label = label),
+              hjust = 0, size = 2.5, colour = "#e74c3c", inherit.aes = FALSE) +
     geom_text(
       data = prev_plot_df %>% filter(is_core) %>%
         arrange(desc(mean_abund)) %>% slice_head(n = 10),

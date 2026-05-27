@@ -243,9 +243,21 @@ mod_upload_landing_ui <- function(id) {
         # ── 2. Read taxonomy (optional) ───────────────────────────────────
         TAX <- NULL
         if (!is.null(input$tax_file)) {
-          tax_raw <- read_table_file(input$tax_file$datapath)
-          tax_mat_test <- as.matrix(tax_raw)
-          v_tax_test <- validate_taxonomy_table(tax_mat_test)
+          tax_raw <- tryCatch({
+            tmp <- read.table(input$tax_file$datapath, sep="\t", header=TRUE,
+                              check.names=FALSE, comment.char="", quote="",
+                              stringsAsFactors=FALSE)
+            # Find ID column - first non-taxonomy column
+            id_col <- which(grepl("^(Feature|feature|id|ID|#OTU)", colnames(tmp)))[1]
+            if (is.na(id_col)) id_col <- 1
+            rownames(tmp) <- as.character(tmp[[id_col]])
+            tmp <- tmp[, -id_col, drop=FALSE]
+            tmp
+          }, error = function(e) read_table_file(input$tax_file$datapath))
+
+
+
+
           
           v_tax   <- validate_taxonomy_table(as.matrix(tax_raw))
           

@@ -205,28 +205,23 @@ ME_GREY  <- "#bdc3c7"
 
 read_table_file <- function(path, header = TRUE) {
   raw_lines <- readLines(path, n = 2, warn = FALSE)
-  # Detect separator from content, not extension (Shiny temp files have no ext)
   n_comma <- lengths(regmatches(raw_lines[2], gregexpr(",",  raw_lines[2])))
   n_tab   <- lengths(regmatches(raw_lines[2], gregexpr("\t", raw_lines[2])))
   sep <- if (n_comma >= n_tab) "," else "\t"
-  # Detect row-names column: blank/quoted-blank first header field
-  first_field <- gsub('"', "", trimws(strsplit(raw_lines[1], sep, fixed=TRUE)[[1]][1]))
-  header_n <- length(strsplit(raw_lines[1], sep, fixed=TRUE)[[1]])
-  data_n   <- length(strsplit(raw_lines[2], sep, fixed=TRUE)[[1]])
-  has_rownames_col <- (first_field == "") || (data_n == header_n + 1)
   df <- suppressWarnings(
     read.table(path, sep=sep, header=header, row.names=NULL,
                check.names=FALSE, comment.char="", quote="")
   )
-  if (has_rownames_col) {
-    rownames(df) <- make.unique(as.character(df[[1]]), sep="_dup")
-  df[[1]] <- NULL
-  # Strip residual quote characters from names and values (artifact of quote="")
-  colnames(df) <- gsub('"', "", colnames(df))
-  rownames(df) <- gsub('"', "", rownames(df))
-  df[] <- lapply(df, function(x) if(is.character(x)) gsub('"', "", x) else x)
-  # Strip residual quote characters from values (artifact of quote="")
-  df[] <- lapply(df, function(x) if(is.character(x)) gsub('"', "", x) else x)
+  # Always use first column as row names if it contains unique non-numeric strings
+  first_col <- as.character(df[[1]])
+  first_is_numeric <- suppressWarnings(!any(is.na(as.numeric(first_col))))
+  first_is_unique  <- !any(duplicated(first_col))
+  if (!first_is_numeric && first_is_unique) {
+    rownames(df) <- first_col
+    df[[1]] <- NULL
+    colnames(df) <- gsub('"', "", colnames(df))
+    rownames(df) <- gsub('"', "", rownames(df))
+    df[] <- lapply(df, function(x) if(is.character(x)) gsub('"', "", x) else x)
   }
   df
 }

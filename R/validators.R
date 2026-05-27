@@ -83,11 +83,11 @@ validate_taxonomy_table <- function(tax_mat) {
   
   # If first column is an ID column from write.csv(row.names = TRUE), remove it
   first_col <- colnames(tax_mat)[1]
-  possible_id_cols <- c("", "X", "Taxon", "Taxa", "OTU", "ASV", "FeatureID", "Feature.ID", "Unnamed: 0")
+  possible_id_cols <- c("", "X", "Taxa", "OTU", "ASV", "FeatureID", "Feature.ID", "Feature ID", "featureid", "Unnamed: 0")
   
-  if (first_col %in% possible_id_cols || !first_col %in% c(
-    "Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species"
-  )) {
+
+
+  if (first_col %in% possible_id_cols) {
     rownames(tax_mat) <- tax_mat[[1]]
     tax_mat <- tax_mat[, -1, drop = FALSE]
   }
