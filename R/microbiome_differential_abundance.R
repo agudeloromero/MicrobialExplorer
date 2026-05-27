@@ -147,25 +147,29 @@ run_ancombc <- function(ps,
   set.seed(42)
 
   ancombc_res <- tryCatch({
-    ancombc2(
-      data         = ps,
-      tax_level    = NULL,       # Already agglomerated
-      fix_formula  = formula,
-      rand_formula = NULL,
-      p_adj_method = p_adj_method,
-      pseudo_sens  = TRUE,
-      prv_cut      = 0,          # Already filtered
-      lib_cut      = 0,
-      s0_perc      = 0.05,
-      group        = group_var,
-      struc_zero   = TRUE,
-      neg_lb       = TRUE,
-      alpha        = alpha,
-      n_cl         = 1,
-      verbose      = FALSE
+    withCallingHandlers(
+      ancombc2(
+        data         = ps,
+        tax_level    = NULL,
+        fix_formula  = formula,
+        rand_formula = NULL,
+        p_adj_method = p_adj_method,
+        pseudo_sens  = TRUE,
+        prv_cut      = 0,
+        lib_cut      = 0,
+        s0_perc      = 0.05,
+        group        = group_var,
+        struc_zero   = TRUE,
+        neg_lb       = TRUE,
+        alpha        = alpha,
+        n_cl         = 1,
+        verbose      = FALSE
+      ),
+      warning = function(w) invokeRestart("muffleWarning")
     )
   }, error = function(e) {
-    cat("  ANCOM-BC2 failed, trying ANCOM-BC1...\n")
+    cat("  ANCOM-BC2 failed:", conditionMessage(e), "\n")
+    cat("  Trying ANCOM-BC1...\n")
     ancombc(
       phyloseq     = ps,
       formula      = formula,
@@ -184,18 +188,19 @@ run_ancombc <- function(ps,
   })
 
   # --- Extract results -------------------------------------------------------
-  if (inherits(ancombc_res, "ANCOMBC2")) {
+  if (inherits(ancombc_res, "ANCOMBC2") || (is.list(ancombc_res) && "res" %in% names(ancombc_res) && "taxon" %in% colnames(ancombc_res$res))) {
     res_df <- ancombc_res$res
-    # Pivot to tidy format
-    lfc_cols   <- grep("^lfc_", colnames(res_df), value = TRUE)
-    q_cols     <- grep("^q_", colnames(res_df), value = TRUE)
-    diff_cols  <- grep("^diff_", colnames(res_df), value = TRUE)
-
-    tidy_list <- lapply(seq_along(lfc_cols), function(i) {
-      comparison <- sub("^lfc_", "", lfc_cols[i])
+    lfc_cols  <- grep("^lfc_(?!\\(Intercept\\))", colnames(res_df), value = TRUE, perl = TRUE)
+    q_cols    <- grep("^q_(?!\\(Intercept\\))",   colnames(res_df), value = TRUE, perl = TRUE)
+    diff_cols <- grep("^diff_(?!\\(Intercept\\)|robust)", colnames(res_df), value = TRUE, perl = TRUE)
+    
+    n <- min(length(lfc_cols), length(q_cols), length(diff_cols))
+    if (n == 0) stop("ANCOMBC2 result has no comparison columns to extract.")
+    
+    tidy_list <- lapply(seq_len(n), function(i) {
       data.frame(
         taxon      = res_df$taxon,
-        comparison = comparison,
+        comparison = sub("^lfc_", "", lfc_cols[i]),
         lfc        = res_df[[lfc_cols[i]]],
         q_value    = res_df[[q_cols[i]]],
         diff_abund = res_df[[diff_cols[i]]],
@@ -203,8 +208,7 @@ run_ancombc <- function(ps,
         stringsAsFactors = FALSE
       )
     })
-    result_df <- bind_rows(tidy_list)
-
+    result_df <- dplyr::bind_rows(tidy_list)
   } else {
     # ANCOM-BC1 format
     res        <- ancombc_res$res
@@ -735,11 +739,11 @@ plot_effect_sizes <- function(result_df,
 
 plot_da_heatmap <- function(ps,
                              da_taxa,
-                             group_var = "group",
-                             transform = "zscore",
-                             rank      = "Genus") {
-
-  cat("=== DA heatmap ===\n")
+                             group_var   = "group",
+                             transform   = "zscore",
+                             rank        = "Genus",
+                             sort_by_group   = TRUE,
+                             cluster_cols    = TRUE) {
 
   # Agglomerate and filter to DA taxa
   ps_agg  <- tax_glom(ps, taxrank = rank, NArm = FALSE)
@@ -766,12 +770,25 @@ plot_da_heatmap <- function(ps,
     otu_plot <- t(scale(t(otu_mat)))
   }
 
-  # Hierarchical clustering of taxa and samples
+  # Hierarchical clustering of taxa (rows)
   row_clust <- hclust(dist(otu_plot), method = "ward.D2")
-  col_clust <- hclust(dist(t(otu_plot)), method = "ward.D2")
-
   row_order <- rownames(otu_plot)[row_clust$order]
-  col_order <- colnames(otu_plot)[col_clust$order]
+  # Column ordering
+  cat("  sort_by_group:", sort_by_group, "| cluster_cols:", cluster_cols, "\n")
+  if (sort_by_group && !is.null(group_var)) {
+    meta_df_ord <- data.frame(sample_data(ps_da))
+    meta_df_ord <- data.frame(sample_data(ps_da))
+    groups      <- unique(as.character(meta_df_ord[[group_var]]))
+    col_order   <- unlist(lapply(groups, function(g) {
+      samps <- rownames(meta_df_ord)[meta_df_ord[[group_var]] == g]
+      samps <- intersect(samps, colnames(otu_plot))
+      if (cluster_cols && length(samps) > 2) {
+        samps[hclust(dist(t(otu_plot[, samps, drop=FALSE])), method="ward.D2")$order]
+      } else { samps }
+    }))
+  } else {
+    col_order <- colnames(otu_plot)[hclust(dist(t(otu_plot)), method="ward.D2")$order]
+  }
 
   # Melt
   heat_df <- as.data.frame(otu_plot) %>%
@@ -784,7 +801,7 @@ plot_da_heatmap <- function(ps,
 
   # Add group annotation
   meta_df <- data.frame(sample_data(ps)) %>%
-    select(all_of(group_var)) %>%
+    dplyr::select(all_of(group_var)) %>%
     rownames_to_column("sample")
   heat_df <- left_join(heat_df, meta_df, by = "sample")
 
@@ -794,7 +811,7 @@ plot_da_heatmap <- function(ps,
   names(colours) <- group_levels
 
   # Annotation strip
-  annot_df <- heat_df %>% select(sample, all_of(group_var)) %>% distinct()
+  annot_df <- heat_df %>% dplyr::select(sample, all_of(group_var)) %>% distinct()
 
   p_annot <- ggplot(annot_df, aes(x = sample, y = 1,
                                    fill = .data[[group_var]])) +

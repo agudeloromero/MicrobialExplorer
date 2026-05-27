@@ -8,7 +8,7 @@
 # decide whether to stop, warn, or proceed.
 # =============================================================================
 
-source("R/utils.R")
+# source("R/utils.R")
 
 # =============================================================================
 # OTU / ASV TABLE VALIDATION
@@ -69,24 +69,61 @@ validate_otu_table <- function(otu_mat) {
 validate_taxonomy_table <- function(tax_mat) {
   errors   <- c()
   warnings <- c()
-
-  if (!is.matrix(tax_mat) && !is.data.frame(tax_mat))
+  
+  if (!is.matrix(tax_mat) && !is.data.frame(tax_mat)) {
     errors <- c(errors, "Taxonomy table must be a matrix or data frame.")
-
-  expected_ranks <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
-  available      <- colnames(tax_mat)
-  missing_ranks  <- setdiff(c("Phylum", "Genus"), available)
-
-  if (length(missing_ranks) > 0)
-    errors <- c(errors, paste("Missing required rank columns:",
-                               paste(missing_ranks, collapse = ", ")))
-
-  pct_na_genus <- if ("Genus" %in% available)
-    round(100 * mean(is.na(tax_mat[, "Genus"])), 1) else NA
-
-  if (!is.na(pct_na_genus) && pct_na_genus > 50)
-    warnings <- c(warnings, paste0(pct_na_genus, "% of taxa have NA at Genus level."))
-
+    return(list(valid = FALSE, errors = errors, warnings = warnings))
+  }
+  
+  tax_mat <- as.data.frame(tax_mat, stringsAsFactors = FALSE)
+  
+  # Clean column names: remove spaces and hidden BOM characters
+  colnames(tax_mat) <- trimws(colnames(tax_mat))
+  colnames(tax_mat) <- gsub("^\ufeff", "", colnames(tax_mat))
+  
+  # If first column is an ID column from write.csv(row.names = TRUE), remove it
+  first_col <- colnames(tax_mat)[1]
+  possible_id_cols <- c("", "X", "Taxon", "Taxa", "OTU", "ASV", "FeatureID", "Feature.ID", "Unnamed: 0")
+  
+  if (first_col %in% possible_id_cols || !first_col %in% c(
+    "Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species"
+  )) {
+    rownames(tax_mat) <- tax_mat[[1]]
+    tax_mat <- tax_mat[, -1, drop = FALSE]
+  }
+  
+  # Clean again after removing first column
+  colnames(tax_mat) <- trimws(colnames(tax_mat))
+  colnames(tax_mat) <- gsub("^\ufeff", "", colnames(tax_mat))
+  
+  available <- colnames(tax_mat)
+  missing_ranks <- setdiff(c("Phylum", "Genus"), available)
+  
+  if (length(missing_ranks) > 0) {
+    errors <- c(
+      errors,
+      paste(
+        "Missing required rank columns:",
+        paste(missing_ranks, collapse = ", "),
+        "| Available columns:",
+        paste(available, collapse = ", ")
+      )
+    )
+  }
+  
+  pct_na_genus <- if ("Genus" %in% available) {
+    round(100 * mean(is.na(tax_mat[, "Genus"]) | tax_mat[, "Genus"] == ""), 1)
+  } else {
+    NA
+  }
+  
+  if (!is.na(pct_na_genus) && pct_na_genus > 50) {
+    warnings <- c(
+      warnings,
+      paste0(pct_na_genus, "% of taxa have NA/empty values at Genus level.")
+    )
+  }
+  
   list(valid = length(errors) == 0, errors = errors, warnings = warnings)
 }
 

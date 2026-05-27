@@ -1,0 +1,85 @@
+/* =============================================================================
+   MicrobialExplorer — custom.css
+   Loaded via tags$head in ui.R
+   ============================================================================= */
+
+/* ── Sidebar tweaks ─────────────────────────────────────────────────────────── */
+.bslib-sidebar-layout > .sidebar {
+  background-color: #f8f9fa;
+  border-right: 1px solid #dee2e6;
+  font-size: 0.875rem;
+}
+
+/* ── Nav bar ────────────────────────────────────────────────────────────────── */
+.navbar {
+  box-shadow: 0 2px 4px rgba(0,0,0,.08);
+}
+
+/* ── Disabled nav items ─────────────────────────────────────────────────────── */
+.nav-item.disabled > a {
+  color: #adb5bd !important;
+  pointer-events: none;
+  cursor: default;
+}
+
+/* ── Cards ──────────────────────────────────────────────────────────────────── */
+.card {
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.06);
+  margin-bottom: 1rem;
+}
+
+.card-header {
+  background-color: #f8f9fa;
+  border-bottom: 1px solid #dee2e6;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+/* ── File input labels ──────────────────────────────────────────────────────── */
+.form-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #495057;
+  margin-bottom: 0.2rem;
+}
+
+/* ── Status / alert tweaks ──────────────────────────────────────────────────── */
+.alert {
+  border-radius: 6px;
+  font-size: 0.82rem;
+}
+
+/* ── Stat badges in sidebar ─────────────────────────────────────────────────── */
+.badge {
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+
+/* ── DT tables ──────────────────────────────────────────────────────────────── */
+.dataTables_wrapper {
+  font-size: 0.85rem;
+}
+
+/* ── Plot containers ────────────────────────────────────────────────────────── */
+.shiny-plot-output {
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+/* ── Section headers inside tabs ───────────────────────────────────────────── */
+.tab-section-header {
+  color: #2c3e50;
+  font-weight: 700;
+  font-size: 1rem;
+  margin-top: 1.5rem;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.25rem;
+  border-bottom: 2px solid #1abc9c;
+  display: inline-block;
+}
+
+/* ── Spinner override ───────────────────────────────────────────────────────── */
+.shiny-spinner-placeholder {
+  min-height: 200px;
+}

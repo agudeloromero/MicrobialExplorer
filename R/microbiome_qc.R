@@ -484,7 +484,7 @@ qc_filter_taxa <- function(ps,
     if (!is.null(tax_table(ps))) {
       tax_df <- as.data.frame(tax_table(ps)) %>%
         tibble::rownames_to_column("taxon") %>%
-        select(taxon, Phylum) %>%
+        dplyr::select(taxon, Phylum) %>%
         mutate(Phylum = ifelse(is.na(Phylum) | Phylum == "", "Unknown", Phylum))
       taxa_df <- left_join(taxa_df, tax_df, by = "taxon")
 

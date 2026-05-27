@@ -18,8 +18,11 @@ cat("║          MICROBIOME PIPELINE — TEST SUITE                   ║\n")
 cat("╚══════════════════════════════════════════════════════════════╝\n\n")
 
 # Set options
-options(warn = 1)         # Show warnings immediately
-options(error = NULL)     # Don't halt on errors (we catch them)
+options(warn = 1)
+options(error = NULL)
+# Add these two:
+suppressWarnings(suppressMessages(library(tidytree)))
+options(lifecycle_verbosity = "quiet")
 
 # Create output directory
 OUTPUT_DIR   <- "test_results"
@@ -68,7 +71,19 @@ pkg_status   <- load_packages(required_pkgs, optional = FALSE)
 opt_status   <- load_packages(optional_pkgs, optional = TRUE)
 
 AVAILABLE_PKGS <- c(names(pkg_status[pkg_status]),
-                     names(opt_status[opt_status]))
+                    names(opt_status[opt_status]))
+
+# Redirect tidytree/phyloseq class conflict messages to null
+local({
+  old <- getOption("warn")
+  options(warn = -1)
+  try(methods::removeClass("phylo", where = ".GlobalEnv"), silent = TRUE)
+  try(methods::removeClass("phylo", where = "package:tidytree"), silent = TRUE)
+  options(warn = old)
+})
+
+# Suppress phylo class conflict noise from tidytree
+assignInNamespace("phylo", getClass("phylo", where = "phyloseq"), "phyloseq")
 
 # --- Source all modules -----------------------------------------------------
 MODULE_FILES <- list(

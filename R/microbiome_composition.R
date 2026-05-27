@@ -182,23 +182,36 @@ plot_composition_bars <- function(ps,
   # Handle NA
   ps_melt$taxon[is.na(ps_melt$taxon)] <- "Unknown"
 
-  # Assign colours — "Other" always gets the last colour
-  all_taxa  <- unique(ps_melt$taxon)
-  other_idx <- which(all_taxa == "Other")
-  non_other <- all_taxa[all_taxa != "Other"]
-  taxa_ordered <- c(non_other, if (length(other_idx) > 0) "Other")
+  # Assign colours — "Other" always gets grey (#b0bec5), regardless of top N
+  all_taxa     <- unique(ps_melt$taxon)
+  non_other    <- all_taxa[all_taxa != "Other"]
+  has_other    <- "Other" %in% all_taxa
+  taxa_ordered <- c(non_other, if (has_other) "Other")
 
-  n_taxa    <- length(taxa_ordered)
-  col_vals  <- TAXA_PALETTE[seq_len(n_taxa)]
-  names(col_vals) <- taxa_ordered
+  n_non_other       <- length(non_other)
+  non_other_palette <- TAXA_PALETTE[TAXA_PALETTE != "#b0bec5"]
+  # Recycle palette if more taxa than colours
+  recycled_palette  <- rep(non_other_palette,
+                           length.out = n_non_other)
+  col_vals <- setNames(recycled_palette, non_other)
+  if (has_other) col_vals["Other"] <- "#b0bec5"
 
   # --- Sample ordering -------------------------------------------------------
   if (sort_by == "group" && !is.null(group_var)) {
+    if (!is.null(facet_var) && facet_var %in% colnames(ps_melt)) {
+      # Sort within each facet panel independently
+      sample_order <- ps_melt %>%
+        select(Sample, all_of(c(group_var, facet_var))) %>%
+        distinct() %>%
+        arrange(.data[[facet_var]], .data[[group_var]], Sample) %>%
+        pull(Sample)
+    } else {
+      sample_order <- ps_melt %>%
+        arrange(.data[[group_var]], Sample) %>%
+        pull(Sample) %>% unique()
+    }
     ps_melt <- ps_melt %>%
-      mutate(Sample = factor(Sample,
-                             levels = ps_melt %>%
-                               arrange(.data[[group_var]], Sample) %>%
-                               pull(Sample) %>% unique()))
+      mutate(Sample = factor(Sample, levels = sample_order))
   } else if (sort_by == "dominant_taxon") {
     dominant <- ps_melt %>%
       group_by(Sample, taxon) %>%
@@ -350,7 +363,8 @@ plot_abundance_heatmap <- function(ps,
                                     top_n           = 30,
                                     group_var       = NULL,
                                     transform       = "clr",
-                                    cluster_samples = TRUE) {
+                                    cluster_samples = TRUE,
+                                    cluster_rows    = TRUE) {
 
   cat("=== Abundance heatmap ===\n")
 
@@ -364,21 +378,77 @@ plot_abundance_heatmap <- function(ps,
   # Remove "Other" from heatmap
   otu_mat <- otu_mat[rownames(otu_mat) != "Other", ]
 
-  # Hierarchical clustering
-  if (cluster_samples && ncol(otu_mat) > 2) {
-    col_order <- hclust(dist(t(otu_mat)))$order
-    otu_mat   <- otu_mat[, col_order]
+  # Row (taxa) clustering
+  # When a group variable is selected, cluster on group-mean profiles so
+  # the dendrogram reflects which taxa differ most between groups
+  row_hclust <- NULL
+  if (cluster_rows && nrow(otu_mat) > 2) {
+    if (!is.null(group_var)) {
+      meta_df <- data.frame(sample_data(ps_agg))
+      if (group_var %in% colnames(meta_df)) {
+        groups     <- as.character(meta_df[[group_var]])
+        # Build group-mean matrix (taxa x groups)
+        grp_levels <- unique(groups)
+        mean_mat   <- sapply(grp_levels, function(g) {
+          idx <- which(groups == g)
+          if (length(idx) == 1) otu_mat[, idx]
+          else rowMeans(otu_mat[, idx, drop = FALSE])
+        })
+        row_hclust <- hclust(dist(mean_mat))
+      } else {
+        row_hclust <- hclust(dist(otu_mat))
+      }
+    } else {
+      row_hclust <- hclust(dist(otu_mat))
+    }
+    otu_mat <- otu_mat[row_hclust$order, ]
   }
-  row_order   <- hclust(dist(otu_mat))$order
-  otu_mat     <- otu_mat[row_order, ]
+
+  # Column (sample) ordering
+  if (cluster_samples && !is.null(group_var) && ncol(otu_mat) > 2) {
+    # Cluster within each group separately, then concatenate groups
+    meta_df <- data.frame(sample_data(ps_agg))
+    if (group_var %in% colnames(meta_df)) {
+      groups      <- unique(as.character(meta_df[[group_var]]))
+      col_order   <- unlist(lapply(groups, function(g) {
+        samps <- rownames(meta_df)[meta_df[[group_var]] == g]
+        samps <- intersect(samps, colnames(otu_mat))
+        if (length(samps) <= 2) return(samps)
+        sub_mat   <- otu_mat[, samps, drop = FALSE]
+        samps[hclust(dist(t(sub_mat)))$order]
+      }))
+      otu_mat <- otu_mat[, col_order, drop = FALSE]
+    } else {
+      # Fall back to global clustering if group_var not in metadata
+      col_order <- hclust(dist(t(otu_mat)))$order
+      otu_mat   <- otu_mat[, col_order]
+    }
+  } else if (cluster_samples && is.null(group_var) && ncol(otu_mat) > 2) {
+    # Global hierarchical clustering — no group sorting, shows column dendrogram
+    col_order <- hclust(dist(t(otu_mat)))$order
+    otu_mat   <- otu_mat[, col_order, drop = FALSE]
+  } else if (!cluster_samples && ncol(otu_mat) > 2) {
+    # No clustering: sort samples by group variable if available
+    if (!is.null(group_var)) {
+      meta_df <- data.frame(sample_data(ps_agg))
+      if (group_var %in% colnames(meta_df)) {
+        col_order <- rownames(meta_df)[order(as.character(meta_df[[group_var]]))]
+        col_order <- intersect(col_order, colnames(otu_mat))
+        otu_mat   <- otu_mat[, col_order, drop = FALSE]
+      }
+    }
+  }
+
+  # Store final column order BEFORE melting — used for both plot and annotation
+  sample_levels <- colnames(otu_mat)
 
   # Melt to long format
   heat_df <- as.data.frame(otu_mat) %>%
     rownames_to_column("taxon") %>%
     pivot_longer(-taxon, names_to = "sample", values_to = "value") %>%
     mutate(
-      taxon  = factor(taxon, levels = rownames(otu_mat)),
-      sample = factor(sample, levels = colnames(otu_mat))
+      taxon  = factor(taxon,  levels = rownames(otu_mat)),
+      sample = factor(sample, levels = sample_levels)
     )
 
   # Add group annotation
@@ -402,7 +472,7 @@ plot_abundance_heatmap <- function(ps,
       name     = ifelse(transform == "clr", "CLR",
                         ifelse(transform == "log10", "Log10", "Rel. abund."))
     ) +
-    scale_x_discrete(expand = c(0, 0)) +
+    scale_x_discrete(limits = sample_levels, expand = c(0, 0)) +
     scale_y_discrete(expand = c(0, 0)) +
     labs(
       title    = paste0(rank, "-level abundance heatmap"),
@@ -417,25 +487,123 @@ plot_abundance_heatmap <- function(ps,
       panel.border = element_rect(colour = "grey80", fill = NA)
     )
 
-  # Add group annotation strip above heatmap
-  if (!is.null(group_var) && group_var %in% colnames(heat_df)) {
-    annot_df <- heat_df %>%
+  # ── Collect optional components before assembly ──────────────────────────
+  has_annot  <- !is.null(group_var) && group_var %in% colnames(heat_df)
+  has_dendro <- !is.null(row_hclust) && requireNamespace("ggdendro", quietly = TRUE)
+
+  # Build annotation strip
+  p_annot <- NULL
+  if (has_annot) {
+    annot_df <- data.frame(sample_data(ps_agg)) %>%
+      rownames_to_column("sample") %>%
       select(sample, all_of(group_var)) %>%
-      distinct() %>%
-      mutate(sample = factor(sample, levels = colnames(otu_mat)))
+      filter(sample %in% sample_levels) %>%
+      mutate(
+        sample   = factor(sample, levels = sample_levels),
+        annot_y  = "group",
+        grp_fill = factor(as.character(.data[[group_var]]))
+      )
 
-    p_annot <- ggplot(annot_df, aes(x = sample, y = 1,
-                                    fill = .data[[group_var]])) +
+    n_groups <- nlevels(annot_df$grp_fill)
+    pal_20   <- c("#e41a1c","#377eb8","#4daf4a","#984ea3","#ff7f00",
+                  "#a65628","#f781bf","#999999","#66c2a5","#fc8d62",
+                  "#8da0cb","#e78ac3","#a6d854","#ffd92f","#e5c494",
+                  "#1b9e77","#d95f02","#7570b3","#e7298a","#66a61e")
+
+    grp_cols <- if (n_groups <= 8) {
+      scale_fill_brewer(palette = "Set2", name = group_var)
+    } else if (n_groups <= 20) {
+      scale_fill_manual(
+        values = setNames(pal_20[seq_len(n_groups)], levels(annot_df$grp_fill)),
+        name   = group_var)
+    } else {
+      scale_fill_viridis_d(name = group_var)
+    }
+
+    p_annot <- ggplot(annot_df,
+                      aes(x = sample, y = annot_y, fill = grp_fill)) +
       geom_tile() +
-      scale_fill_brewer(palette = "Set2", name = group_var) +
-      scale_x_discrete(expand = c(0, 0)) +
+      grp_cols +
+      scale_x_discrete(limits = sample_levels, expand = c(0, 0)) +
+      scale_y_discrete(expand = c(0, 0)) +
+      labs(fill = group_var) +
       theme_void() +
-      theme(legend.position = "right")
-
-    p <- p_annot / p +
-      plot_layout(heights = c(0.06, 1), guides = "collect")
+      theme(legend.position  = "right",
+            plot.margin      = ggplot2::margin(0, 0, 0, 0))
   }
 
+  # Build row dendrogram
+  p_dendro <- NULL
+  if (has_dendro) {
+    dendro_data <- ggdendro::dendro_data(as.dendrogram(row_hclust),
+                                         type = "rectangle")
+    n_taxa <- nrow(otu_mat)
+
+    p_dendro <- ggplot(ggdendro::segment(dendro_data)) +
+      geom_segment(aes(x = y, y = n_taxa + 1 - x,
+                       xend = yend, yend = n_taxa + 1 - xend),
+                   linewidth = 0.4, colour = "#2c3e50") +
+      scale_x_reverse(expand = c(0.02, 0)) +
+      scale_y_continuous(limits = c(0.5, n_taxa + 0.5), expand = c(0, 0)) +
+      theme_void() +
+      theme(plot.margin = ggplot2::margin(0, 0, 0, 0))
+
+    # Move taxa labels to right side when dendrogram is present
+    p <- p +
+      scale_y_discrete(position = "right", expand = c(0, 0)) +
+      theme(
+        axis.text.y  = element_text(size = 8, face = "italic",
+                                     hjust = 0, margin = ggplot2::margin(l = 4)),
+        axis.ticks.y = element_blank(),
+        axis.title.y = element_blank()
+      )
+  }
+  # Build column dendrogram (when cluster_samples=TRUE, group_var=NULL)
+  p_col_dendro <- NULL
+  if (cluster_samples && is.null(group_var) &&
+      requireNamespace("ggdendro", quietly = TRUE) && ncol(otu_mat) > 2) {
+    col_hclust   <- hclust(dist(t(otu_mat)))
+    col_dd       <- ggdendro::dendro_data(as.dendrogram(col_hclust), type = "rectangle")
+    n_samp       <- ncol(otu_mat)
+    p_col_dendro <- ggplot(ggdendro::segment(col_dd)) +
+      geom_segment(aes(x = x, y = y, xend = xend, yend = yend),
+                   linewidth = 0.4, colour = "#2c3e50") +
+      scale_x_continuous(limits = c(0.5, n_samp + 0.5), expand = c(0, 0)) +
+      scale_y_continuous(expand = c(0.02, 0)) +
+      theme_void() +
+      theme(plot.margin = ggplot2::margin(0, 0, 0, 0))
+  }
+
+  # ── Assemble final layout ─────────────────────────────────────────────────
+  has_col_dendro <- !is.null(p_col_dendro)
+  if (has_dendro && has_annot) {
+    p <- (patchwork::plot_spacer() + p_annot + p_dendro + p) +
+      patchwork::plot_layout(
+        design  = "AB
+CD",
+        widths  = c(0.15, 1),
+        heights = c(0.05, 1),
+        guides  = "collect"
+      )
+  } else if (has_col_dendro && has_dendro) {
+    p <- (patchwork::plot_spacer() + p_col_dendro + p_dendro + p) +
+      patchwork::plot_layout(
+        design  = "AB
+CD",
+        widths  = c(0.15, 1),
+        heights = c(0.15, 1),
+        guides  = "collect"
+      )
+  } else if (has_col_dendro) {
+    p <- (p_col_dendro / p) +
+      patchwork::plot_layout(heights = c(0.15, 1), guides = "collect")
+  } else if (has_dendro) {
+    p <- (p_dendro | p) +
+      patchwork::plot_layout(widths = c(0.15, 1), guides = "collect")
+  } else if (has_annot) {
+    p <- (p_annot / p) +
+      patchwork::plot_layout(heights = c(0.05, 1), guides = "collect")
+  }
   return(p)
 }
 
@@ -728,10 +896,10 @@ identify_core_microbiome <- function(ps,
   }
 
   if (!is.null(group_var) && group_var %in% sample_variables(ps)) {
-    groups    <- unique(as.character(sample_data(ps)[[group_var]]))
+    groups    <- unique(as.character(sample_data(ps_gen)[[group_var]]))
     prev_list <- lapply(groups, function(g) {
-      ps_sub <- subset_samples(ps_gen,
-                               as.character(sample_data(ps_gen)[[group_var]]) == g)
+      keep   <- as.character(sample_data(ps_gen)[[group_var]]) == g
+      ps_sub <- prune_samples(keep, ps_gen)
       compute_core(ps_sub, label = g)
     })
     prev_df <- bind_rows(prev_list)

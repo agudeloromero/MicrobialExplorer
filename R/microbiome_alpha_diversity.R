@@ -260,6 +260,19 @@ plot_alpha_diversity <- function(diversity_df,
       stat_test <- diversity_df %>%
         tukey_hsd(formula_str) %>%
         add_significance("p.adj")
+
+    } else if (test == "t.test") {
+      stat_test <- diversity_df %>%
+        t_test(formula_str) %>%
+        adjust_pvalue(method = p_adjust) %>%
+        add_significance("p.adj")
+
+    } else {
+      # Fallback — ensure stat_test exists
+      stat_test <- diversity_df %>%
+        wilcox_test(formula_str) %>%
+        adjust_pvalue(method = p_adjust) %>%
+        add_significance("p.adj")
     }
 
     stat_test$.metric <- m

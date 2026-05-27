@@ -694,7 +694,7 @@ test_functional_da <- function(feature_mat,
   cat("=== Functional differential abundance (", feature_type, ") ===\n")
 
   # Normalise and transpose
-  mat_rel <- apply(feature_mat, 2, function(x) x / sum(x))
+  mat_rel <- apply(feature_mat, 2, function(x) x / (sum(x) + 1e-10))
   mat_t   <- t(mat_rel)
   shared  <- intersect(rownames(mat_t), rownames(metadata))
   mat_t   <- mat_t[shared, ]
@@ -775,8 +775,8 @@ test_functional_da <- function(feature_mat,
 
   p_bar <- NULL
   if (nrow(top_da) > 0) {
-    top_da <- top_da %>%
-      mutate(label = fct_reorder(.data[[label_col]], lfc))
+    top_da <- top_da %>% filter(!is.na(lfc)) %>%
+      mutate(label = fct_reorder(as.character(.data[[label_col]]), lfc))
 
     colour_map <- c("Increased" = "#e74c3c", "Decreased" = "#3498db")
 
@@ -796,7 +796,8 @@ test_functional_da <- function(feature_mat,
         y        = NULL
       ) +
       theme_microbiome() +
-      theme(axis.text.y = element_text(size = 7))
+      theme(axis.text.y = element_text(size = 8), plot.margin = ggplot2::margin(5, 40, 5, 150))
+
   }
 
   # --- Bubble plot: effect size vs significance ----------------------------
@@ -868,11 +869,11 @@ test_functional_da <- function(feature_mat,
 
 plot_functional_heatmap <- function(feature_mat,
                                      metadata,
-                                     group_var    = "group",
+                                     group_var    = NULL,
                                      top_n        = 40,
                                      feature_type = "Pathway",
+                                     cluster_cols = TRUE,
                                      descriptions = NULL) {
-
   cat("=== Functional heatmap ===\n")
 
   # Normalise and select top features
@@ -894,7 +895,15 @@ plot_functional_heatmap <- function(feature_mat,
   col_clust <- hclust(dist(t(mat_z)), method = "ward.D2")
 
   row_order <- rownames(mat_z)[row_clust$order]
-  col_order <- colnames(mat_z)[col_clust$order]
+  if (!is.null(group_var) && group_var %in% colnames(metadata)) {
+    grp_vals  <- as.character(metadata[shared, group_var])
+    col_order <- unlist(lapply(unique(grp_vals), function(g) {
+      s <- shared[grp_vals == g]
+      if (length(s) > 2) s[hclust(dist(t(mat_z[, s, drop=FALSE])))$order] else s
+    }))
+  } else {
+    col_order <- colnames(mat_z)[col_clust$order]
+  }
 
   # Feature labels
   feat_labels <- if (!is.null(descriptions)) {
@@ -922,19 +931,19 @@ plot_functional_heatmap <- function(feature_mat,
                 rownames_to_column("sample"), by = "sample")
 
   # Group annotation strip
-  groups   <- unique(heat_df[[group_var]])
-  n_groups <- length(groups)
-  colours  <- brewer.pal(max(3, n_groups), "Set2")[seq_len(n_groups)]
-  names(colours) <- groups
+  ann_var <- if (!is.null(group_var) && group_var %in% colnames(metadata)) group_var else NULL
+  if (!is.null(ann_var)) {
+    groups   <- unique(heat_df[[ann_var]])
+    n_groups <- length(groups)
+    colours  <- brewer.pal(max(3, n_groups), "Set2")[seq_len(n_groups)]
+    names(colours) <- groups
+    annot_df <- heat_df %>% dplyr::select(sample, all_of(ann_var)) %>% distinct()
+    p_annot  <- ggplot(annot_df, aes(x = sample, y = 1, fill = .data[[ann_var]])) +
+      geom_tile() + scale_fill_manual(values = colours, name = ann_var) +
+      scale_x_discrete(expand = c(0, 0)) + theme_void() + theme(legend.position = "right")
+  } else { p_annot <- NULL }
 
-  annot_df <- heat_df %>% select(sample, all_of(group_var)) %>% distinct()
 
-  p_annot <- ggplot(annot_df,
-                    aes(x = sample, y = 1, fill = .data[[group_var]])) +
-    geom_tile() +
-    scale_fill_manual(values = colours, name = group_var) +
-    scale_x_discrete(expand = c(0, 0)) +
-    theme_void() + theme(legend.position = "right")
 
   p_heat <- ggplot(heat_df, aes(x = sample, y = feature, fill = zscore)) +
     geom_tile(colour = "white", linewidth = 0.05) +
@@ -953,29 +962,53 @@ plot_functional_heatmap <- function(feature_mat,
       panel.border = element_rect(colour = "grey80", fill = NA)
     )
 
-  combined <- p_annot / p_heat +
-    plot_layout(heights = c(0.05, 1), guides = "collect") +
-    plot_annotation(
-      title = paste0("Functional heatmap - ", feature_type,
-                     " (top ", nrow(mat_sub), ")"),
-      theme = theme(plot.title = element_text(size = 13, face = "bold"))
-    )
+  p_dendro <- NULL
+  if (requireNamespace('ggdendro', quietly = TRUE)) {
+    dendro_data <- ggdendro::dendro_data(as.dendrogram(row_clust), type = 'rectangle')
+    n_feat <- length(row_order)
+    p_dendro <- ggplot(ggdendro::segment(dendro_data)) +
+      geom_segment(aes(x = y, xend = yend, y = x, yend = xend), colour = 'grey40', linewidth = 0.4) +
+      scale_x_reverse() +
+      scale_y_continuous(limits = c(0.5, n_feat + 0.5), expand = c(0, 0)) +
+      theme_void() +
+      theme(plot.margin = ggplot2::margin(0, 2, 0, 4))
+  }
+
+  # Suppress y-axis text on heatmap when dendrogram present
+  if (!is.null(p_dendro)) p_heat <- p_heat + theme(axis.text.y = element_blank(), axis.ticks.y = element_blank())
+
+  # Column dendrogram (only when cluster_cols = TRUE)
+  p_col_dendro <- NULL
+  if (isTRUE(cluster_cols) && requireNamespace("ggdendro", quietly = TRUE) && ncol(mat_z) > 2) {
+    col_dd       <- ggdendro::dendro_data(as.dendrogram(col_clust), type = "rectangle")
+    p_col_dendro <- ggplot(ggdendro::segment(col_dd)) +
+      geom_segment(aes(x = x, xend = xend, y = y, yend = yend), colour = "grey40", linewidth = 0.4) +
+      scale_x_continuous(limits = c(0.5, ncol(mat_z) + 0.5), expand = c(0, 0)) +
+      theme_void() +
+      theme(plot.margin = ggplot2::margin(4, 0, 0, 0))
+  }
+
+  # Assemble with patchwork
+  title_str <- paste0("Functional heatmap - ", feature_type, " (top ", nrow(mat_sub), ")")
+  ann_plot  <- if (!is.null(p_annot)) p_annot else patchwork::plot_spacer()
+  if (!is.null(p_dendro) && !is.null(p_col_dendro)) {
+    combined <- (patchwork::plot_spacer() + p_col_dendro + ann_plot + patchwork::plot_spacer() + p_dendro + p_heat) +
+      patchwork::plot_layout(ncol = 2, widths = c(0.15, 1), heights = c(0.12, 0.05, 1), guides = "collect") +
+      patchwork::plot_annotation(title = title_str, theme = theme(plot.title = element_text(size = 13, face = "bold")))
+  } else if (!is.null(p_dendro)) {
+    combined <- (patchwork::plot_spacer() + ann_plot + p_dendro + p_heat) +
+      patchwork::plot_layout(ncol = 2, widths = c(0.15, 1), heights = c(0.05, 1), guides = "collect") +
+      patchwork::plot_annotation(title = title_str, theme = theme(plot.title = element_text(size = 13, face = "bold")))
+  } else {
+    combined <- ann_plot / p_heat +
+      patchwork::plot_layout(heights = c(0.05, 1), guides = "collect") +
+      patchwork::plot_annotation(title = title_str, theme = theme(plot.title = element_text(size = 13, face = "bold")))
+  }
 
   cat("  Features plotted:", nrow(mat_sub), "\n\n")
   return(combined)
 }
 
-
-# =============================================================================
-# SECTION 8 — LINK FUNCTIONAL TO TAXONOMIC RESULTS
-# =============================================================================
-
-#' Identify which taxa contribute most to significantly different pathways.
-#'
-#' Uses PICRUSt2 stratified output (pathway contributions per taxon per sample).
-#'
-#' @param stratified_file  Path to PICRUSt2 stratified pathway output.
-#' @param target_pathways  Character vector of pathway IDs to examine.
 #' @param metadata         Data frame of sample metadata.
 #' @param group_var        Grouping variable.
 #' @param top_n            Top contributing taxa to show.
