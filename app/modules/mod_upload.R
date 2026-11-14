@@ -21,12 +21,8 @@ mod_upload_ui <- function(id) {
       icon("upload"), " Data input"
     ),
 
-    # ── Demo dataset shortcut ───────────────────────────────────────────────
-    actionButton(
-      ns("load_demo"),
-      label = tagList(icon("flask"), " Load demo data"),
-      class = "btn btn-outline-secondary btn-sm w-100 mb-2"
-    ),
+    # ── Option 1: demo dataset ──────────────────────────────────────────────
+    tags$p(class = "fw-bold small mb-1", "Option 1 — Demo dataset"),
 
     # Demo dataset options — simple dropdown, no bsplus needed
     selectInput(
@@ -40,7 +36,17 @@ mod_upload_ui <- function(id) {
       ),
       selected = "network_enriched"
     ),
-    tags$p(class = "text-center text-muted small my-1", "— or upload your own —"),
+
+    actionButton(
+      ns("load_demo"),
+      label = tagList(icon("flask"), " Load demo data"),
+      class = "btn btn-outline-secondary btn-sm w-100 mb-2"
+    ),
+
+    hr(),
+
+    # ── Option 2: user files ────────────────────────────────────────────────
+    tags$p(class = "fw-bold small mb-1", "Option 2 — Your own files"),
 
     # ── OTU / ASV table ────────────────────────────────────────────────────
     fileInput(
@@ -196,16 +202,15 @@ mod_upload_landing_ui <- function(id) {
       cache    = NULL    # output of precompute_cache() [once implemented]
     )
 
-    # ── Enable Import button once OTU file is chosen (or demo selected) ───
+    # ── Enable Import button once OTU file is chosen ──────────────────────
     observe({
-      if (!is.null(input$otu_file) || input$load_demo > 0)
+      if (!is.null(input$otu_file))
         shinyjs::enable("build_ps")
     })
 
     # ── Demo dataset loader ───────────────────────────────────────────────
     observeEvent(input$load_demo, {
       tryCatch({
-        shinyjs::disable("build_ps")
         .show_status("Loading demo dataset…", type = "info")
         Sys.sleep(0.3)   # allow UI to update
 
@@ -395,7 +400,7 @@ mod_upload_landing_ui <- function(id) {
       v_ps <- validate_phyloseq(ps)
       if (!v_ps$valid) {
         .show_validation_errors(paste0("phyloseq object (", source, ")"), v_ps)
-        shinyjs::enable("build_ps")
+        if (!is.null(input$otu_file)) shinyjs::enable("build_ps")
         return()
       }
 
@@ -404,16 +409,9 @@ mod_upload_landing_ui <- function(id) {
       rv$ps       <- ps
       rv$features <- feat
 
-      # Trigger precompute cache in background (non-blocking via future if available)
-      # For V1 this runs synchronously; replace with future::future() for V2
-      cache <- tryCatch(
-        precompute_cache(ps, feat),
-        error = function(e) {
-          message("[mod_upload] precompute_cache failed: ", conditionMessage(e))
-          NULL
-        }
-      )
-      rv$cache <- cache
+      # Precompute cache is not run on import: no module reads rv$cache yet,
+      # and it blocked the session while it ran. Each tab computes on demand.
+      rv$cache <- NULL
 
       # Build success message
       warn_msgs <- v_ps$warnings
@@ -432,7 +430,7 @@ mod_upload_landing_ui <- function(id) {
         )
       }
 
-      shinyjs::enable("build_ps")
+      if (!is.null(input$otu_file)) shinyjs::enable("build_ps")
     }
 
     # ── Validation feedback helpers ───────────────────────────────────────
