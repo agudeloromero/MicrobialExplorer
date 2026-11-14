@@ -28,7 +28,7 @@ mod_qc_ui <- function(id) {
         value = "depth",
 
         layout_columns(
-          col_widths = c(3, 9),
+          col_widths = c(3, 9, 12),
 
           # Controls
           card(
@@ -56,6 +56,52 @@ mod_qc_ui <- function(id) {
           card(
             card_body(
               plotOutput(ns("depth_plot"), height = "500px")
+            )
+          ),
+
+          # Help
+          card(
+            card_header(icon("circle-info"), " How to read this tab"),
+            card_body(
+              class = "small",
+              layout_columns(
+                col_widths = c(6, 6),
+                tags$div(
+                  tags$h6(class = "fw-bold", "What you are looking at"),
+                  tags$ul(
+                    tags$li(tags$strong("Top plot: "),
+                            "one bar per sample, sorted from fewest to most reads. ",
+                            "The red dashed line is your threshold; samples under it are flagged."),
+                    tags$li(tags$strong("Bottom plot: "),
+                            "how many samples fall in each read-depth range. ",
+                            "Red line = threshold, green line = median."),
+                    tags$li(tags$strong("Summary: "),
+                            "Samples, Min, Median and Max reads describe the data and do not ",
+                            "change with the threshold. Only \"Below threshold\" and ",
+                            "\"Flagged samples\" do."),
+                    tags$li(tags$strong("Nothing is removed here. "),
+                            "This tab only flags samples. To remove them, use the ",
+                            "Sample filter tab.")
+                  )
+                ),
+                tags$div(
+                  tags$h6(class = "fw-bold", "Choosing a minimum"),
+                  tags$ul(
+                    tags$li("There is no universal value: it depends on the sequencing run ",
+                            "and the sample type."),
+                    tags$li("For 16S amplicon data, 1,000 reads is a commonly used lower limit, ",
+                            "and 5,000 to 10,000 is often used for well-sequenced samples such as stool."),
+                    tags$li("Low-biomass samples (for example milk, airway or skin) often have ",
+                            "fewer reads; a lower threshold may be needed, and negative controls ",
+                            "become more important."),
+                    tags$li("Use the top plot: set the threshold in the gap between the few ",
+                            "samples that sit far below the rest and the main group."),
+                    tags$li("Check the Rarefaction tab: the threshold should be at a depth ",
+                            "where the curves have flattened."),
+                    tags$li("A higher threshold gives more reliable samples but fewer of them.")
+                  )
+                )
+              )
             )
           )
         )
