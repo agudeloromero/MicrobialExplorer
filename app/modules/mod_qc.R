@@ -113,7 +113,7 @@ mod_qc_ui <- function(id) {
         value = "rarefaction",
 
         layout_columns(
-          col_widths = c(3, 9),
+          col_widths = c(3, 9, 12),
 
           card(
             class = "border-0 bg-light",
@@ -149,6 +149,61 @@ mod_qc_ui <- function(id) {
           card(
             card_body(
               plotOutput(ns("rare_plot"), height = "500px")
+            )
+          ),
+
+          # Help
+          card(
+            card_header(icon("circle-info"), " How to read this tab"),
+            card_body(
+              class = "small",
+              layout_columns(
+                col_widths = c(6, 6),
+                tags$div(
+                  tags$h6(class = "fw-bold", "What you are looking at"),
+                  tags$ul(
+                    tags$li(tags$strong("The question: "),
+                            "were the samples sequenced deeply enough to capture their diversity?"),
+                    tags$li(tags$strong("Each line is one sample. "),
+                            "It shows how many ASVs would be found if only that many reads ",
+                            "had been sequenced."),
+                    tags$li(tags$strong("A flat line is good: "),
+                            "more reads would add few new ASVs. A line still climbing at the ",
+                            "right edge means deeper sequencing would find more."),
+                    tags$li(tags$strong("The curves stop at the shallowest sample. "),
+                            "One very shallow sample cuts all curves short."),
+                    tags$li(tags$strong("Orange dotted line (knee point): "),
+                            "for each sample, the depth where the curve gains about 1 new ASV ",
+                            "per 100 reads; the line is the median across samples. It is a guide ",
+                            "only: if the curves are still rising there, they have not levelled off."),
+                    tags$li(tags$strong("Nothing is changed here. "),
+                            "This tab only draws the curves; the data are not rarefied or filtered.")
+                  )
+                ),
+                tags$div(
+                  tags$h6(class = "fw-bold", "Settings and what to do next"),
+                  tags$ul(
+                    tags$li(tags$strong("Step size: "),
+                            "the gap in reads between calculated points. 500 suits most data. ",
+                            "Use 100 if your shallowest sample has only a few thousand reads; ",
+                            "use a larger step to make deep datasets run faster."),
+                    tags$li(tags$strong("Max samples to plot: "),
+                            "leave blank to draw every sample. With hundreds of samples, ",
+                            "enter a number such as 50 to draw a random subset and save time."),
+                    tags$li(tags$strong("If most curves are flat: "),
+                            "the sequencing depth is sufficient. Note the depth where they flatten."),
+                    tags$li(tags$strong("If a few samples are much shallower than the rest: "),
+                            "use that depth as the minimum reads in the Sample filter tab, ",
+                            "so those samples are removed."),
+                    tags$li(tags$strong("If most curves are still climbing: "),
+                            "richness is underestimated. Compare richness between groups with ",
+                            "caution, or use evenness-based measures such as Shannon, which are ",
+                            "less sensitive to depth."),
+                    tags$li("Denoised ASV data without singletons tends to flatten sooner than ",
+                            "OTU data, so flat curves are less informative there.")
+                  )
+                )
+              )
             )
           )
         )
