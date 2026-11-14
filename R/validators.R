@@ -232,7 +232,8 @@ validate_phyloseq <- function(ps,
                                     min(sample_sums(ps)), " reads."))
 
   expected_ranks <- c("Phylum", "Genus")
-  missing_ranks  <- setdiff(expected_ranks, rank_names(ps))
+  avail_ranks    <- tryCatch(rank_names(ps), error = function(e) character(0))
+  missing_ranks  <- setdiff(expected_ranks, avail_ranks)
   if (length(missing_ranks) > 0)
     warnings <- c(warnings, paste("Missing recommended taxonomic ranks:",
                                    paste(missing_ranks, collapse = ", ")))
