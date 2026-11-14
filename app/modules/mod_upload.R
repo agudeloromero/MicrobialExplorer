@@ -29,8 +29,8 @@ mod_upload_ui <- function(id) {
       ns("demo_choice"),
       label = NULL,
       choices = c(
-        "GlobalPatterns (body sites, n=9)"  = "GlobalPatterns",
-        "Enterotype (gut microbiome, n=271)" = "enterotype",
+        "GlobalPatterns (body sites, n=26)" = "GlobalPatterns",
+        "Enterotype (gut microbiome, n=280)" = "enterotype",
         "Soilrep (soil warming, n=56)"       = "soilrep",
         "Network enriched (IBD/Healthy, n=60)" = "network_enriched"
       ),
@@ -112,6 +112,9 @@ mod_upload_landing_ui <- function(id) {
   ns <- NS(id)
 
   tagList(
+    # Status card — shown after data is loaded
+    uiOutput(ns("landing_status")),
+
     layout_columns(
       col_widths = c(8, 4),
 
@@ -182,10 +185,7 @@ mod_upload_landing_ui <- function(id) {
                  "(all from the phyloseq R package)")
         )
       )
-    ),
-
-    # Status card — shown after data is loaded
-    uiOutput(ns("landing_status"))
+    )
   )
 }
 
@@ -488,7 +488,7 @@ mod_upload_landing_ui <- function(id) {
       n_avail <- sum(avail)
 
       card(
-        class = "border-success mt-3",
+        class = "border-success mb-3",
         card_header(
           class = "bg-success text-white",
           icon("circle-check"), " Data loaded successfully"
