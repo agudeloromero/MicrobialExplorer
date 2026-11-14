@@ -10,6 +10,7 @@ ui <- page_navbar(
     tags$small(class = "text-muted ms-2 fs-6 fw-normal", APP_VERSION)
   ),
   window_title = APP_TITLE,
+  id = "top_nav",
   theme = bs_theme(
     version    = 5,
     bootswatch = "flatly",
