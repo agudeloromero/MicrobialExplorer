@@ -491,6 +491,7 @@ Try relaxing thresholds.",
 
     # ── Enable download buttons ──────────────────────────────────────────────
     observe({
+      req(identical(parent_input$top_nav, "da"))   # only while the tab is open
       shinyjs::toggleState("vol_download",  !is.null(vol_plot_obj()))
       shinyjs::toggleState("eff_download",  !is.null(eff_plot_obj()))
       shinyjs::toggleState("heat_download", !is.null(heat_plot_obj()))

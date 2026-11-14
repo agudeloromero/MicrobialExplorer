@@ -170,15 +170,6 @@ mod_alpha_server <- function(id, upload_data, parent_input) {
       box_plot_obj()
     })
 
-    observe({
-      message("[box_result debug] is null: ", is.null(box_result()))
-      if (!is.null(box_result())) {
-        message("[box_result debug] names: ", paste(names(box_result()), collapse=", "))
-        message("[box_result debug] stats null: ", is.null(box_result()$stats))
-        message("[box_result debug] stats length: ", length(box_result()$stats))
-      }
-    })
-
     output$box_stats <- DT::renderDT({
       req(box_result())
       stats <- box_result()$stats
@@ -304,6 +295,7 @@ mod_alpha_server <- function(id, upload_data, parent_input) {
 
     # ── Enable download buttons ──────────────────────────────────────────────
     observe({
+      req(identical(parent_input$top_nav, "alpha"))   # only while the tab is open
       shinyjs::toggleState("box_download",  !is.null(box_plot_obj()))
       shinyjs::toggleState("rare_download", !is.null(rare_plot_obj()))
       shinyjs::toggleState("grad_download", !is.null(grad_plot_obj()))

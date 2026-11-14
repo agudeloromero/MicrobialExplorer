@@ -437,6 +437,7 @@ mod_beta_server <- function(id, upload_data, parent_input) {
 
     # ── Enable download buttons ──────────────────────────────────────────────
     observe({
+      req(identical(parent_input$top_nav, "beta"))   # only while the tab is open
       shinyjs::toggleState("ord_download",  !is.null(ord_plot_obj()))
       shinyjs::toggleState("perm_download", !is.null(perm_result()))
       shinyjs::toggleState("disp_download", !is.null(disp_plot_obj()))
