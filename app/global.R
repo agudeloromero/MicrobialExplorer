@@ -12,7 +12,6 @@ suppressPackageStartupMessages({
   library(shinyjs)
   library(bslib)
   library(DT)
-  library(bsplus)
   library(shinycssloaders)
 
   # Phyloseq / biology
