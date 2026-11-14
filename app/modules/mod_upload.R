@@ -247,6 +247,7 @@ mod_upload_landing_ui <- function(id) {
             tmp <- read.table(input$tax_file$datapath, sep="\t", header=TRUE,
                               check.names=FALSE, comment.char="", quote="",
                               stringsAsFactors=FALSE)
+            if (ncol(tmp) < 2) stop("Taxonomy file is not tab-delimited")
             # Find ID column - first non-taxonomy column
             id_col <- which(grepl("^(Feature|feature|id|ID|#OTU)", colnames(tmp)))[1]
             if (is.na(id_col)) id_col <- 1
@@ -562,7 +563,7 @@ precompute_cache <- function(ps, features) {
   } else {
     # Beta diversity works on relative/normalised data too (no rarefaction)
     cache$distances <- tryCatch(
-      compute_distances(ps_c, methods = c("bray", "jaccard"), rare_depth = NULL),
+      compute_distances(ps_c, methods = c("bray", "jaccard"), rarefaction = FALSE),
       error = function(e) NULL
     )
   }
