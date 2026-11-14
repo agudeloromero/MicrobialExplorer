@@ -130,10 +130,13 @@ detect_features <- function(ps) {
 
   data_type <- detect_data_type(otu_mat)
 
-  # Determine which group variables have >= 2 levels
+  # Determine which group variables have >= 2 levels.
+  # Variables with a different value in every sample (sample IDs, barcodes)
+  # are not groups and are left out.
   group_vars <- if (!is.null(meta_df)) {
     Filter(function(v) {
-      n_distinct(meta_df[[v]], na.rm = TRUE) >= 2
+      n_lev <- n_distinct(meta_df[[v]], na.rm = TRUE)
+      n_lev >= 2 && n_lev < sum(!is.na(meta_df[[v]]))
     }, cat_vars)
   } else character(0)
 
@@ -237,7 +240,11 @@ load_demo_data <- function(name = "GlobalPatterns") {
   switch(name,
     GlobalPatterns = {
       data("GlobalPatterns", package = "phyloseq", envir = environment())
-      get("GlobalPatterns", envir = environment())
+      ps_gp   <- get("GlobalPatterns", envir = environment())
+      meta_gp <- data.frame(sample_data(ps_gp))
+      colnames(meta_gp)[colnames(meta_gp) == "X.SampleID"] <- "SampleID"
+      sample_data(ps_gp) <- sample_data(meta_gp)
+      ps_gp
     },
     enterotype = {
       data("enterotype", package = "phyloseq", envir = environment())
