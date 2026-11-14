@@ -481,7 +481,8 @@ qc_filter_taxa <- function(ps,
   p <- NULL
   if (plot_filter) {
     # Add phylum information for colouring
-    if (!is.null(tax_table(ps))) {
+    if (!is.null(tax_table(ps, errorIfNULL = FALSE)) &&
+        "Phylum" %in% colnames(tax_table(ps))) {
       tax_df <- as.data.frame(tax_table(ps)) %>%
         tibble::rownames_to_column("taxon") %>%
         dplyr::select(taxon, Phylum) %>%
