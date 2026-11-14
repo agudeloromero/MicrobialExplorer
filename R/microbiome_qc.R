@@ -226,6 +226,14 @@ qc_sequencing_depth <- function(ps,
   # --- Plot 1: Bar plot of read depth per sample ----------------------------
   colour_var <- if (!is.null(group_var) && group_var %in% colnames(depth_df)) group_var else NULL
 
+  # Set2 has 8 colours; extend it when there are more groups
+  n_fill     <- if (!is.null(colour_var)) n_distinct(depth_df[[colour_var]]) else 2
+  fill_scale <- if (n_fill > 8) {
+    scale_fill_manual(values = colorRampPalette(brewer.pal(8, "Set2"))(n_fill))
+  } else {
+    scale_fill_brewer(palette = "Set2")
+  }
+
   p1 <- ggplot(depth_df, aes(x = sample_order, y = reads,
                               fill = if (!is.null(colour_var)) .data[[colour_var]] else flag)) +
     geom_col(width = 0.85) +
@@ -235,7 +243,7 @@ qc_sequencing_depth <- function(ps,
              label = paste0("Min threshold: ", format(min_reads, big.mark = ",")),
              hjust = 0, size = 3, colour = "#e74c3c") +
     scale_y_continuous(labels = label_comma()) +
-    scale_fill_brewer(palette = "Set2") +
+    fill_scale +
     labs(
       title    = "Sequencing depth per sample",
       subtitle = paste0("n = ", nrow(depth_df), " samples | Threshold = ",
@@ -376,7 +384,12 @@ qc_rarefaction_curves <- function(ps,
       if (!is.null(group_var) && group_var %in% colnames(rare_df)) {
         list(
           geom_line(aes(colour = .data[[group_var]]), alpha = 0.6, linewidth = 0.5),
-          scale_colour_brewer(palette = "Set2")
+          if (n_distinct(rare_df[[group_var]]) > 8) {
+            scale_colour_manual(values = colorRampPalette(brewer.pal(8, "Set2"))(
+              n_distinct(rare_df[[group_var]])))
+          } else {
+            scale_colour_brewer(palette = "Set2")
+          }
         )
       } else {
         list(
