@@ -4,7 +4,8 @@
 
 ui <- page_navbar(
   title = tags$span(
-    tags$img(src = "logo.png", height = "28px", style = "margin-right:8px;"),
+    if (file.exists("www/logo.png"))
+      tags$img(src = "logo.png", height = "28px", style = "margin-right:8px;"),
     APP_TITLE,
     tags$small(class = "text-muted ms-2 fs-6 fw-normal", APP_VERSION)
   ),
