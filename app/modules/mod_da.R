@@ -412,7 +412,7 @@ mod_da_server <- function(id, upload_data, parent_input) {
       if (length(sig_taxa) == 0) return(NULL)
       # Use plot_abundance_heatmap (same as composition — has dendrogram)
       tryCatch({
-        ps_agg <- tax_glom(res$ps_da, taxrank = res$rank, NArm = FALSE)
+        ps_agg <- fast_tax_glom(res$ps_da, taxrank = res$rank, NArm = FALSE)
         taxa_names(ps_agg) <- as.character(tax_table(ps_agg)[, res$rank])
         shared <- intersect(sig_taxa, taxa_names(ps_agg))
         if (length(shared) == 0) return(NULL)
