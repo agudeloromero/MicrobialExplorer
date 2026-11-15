@@ -312,15 +312,22 @@ plot_composition_bars <- function(ps,
 #' @param ps        A phyloseq object (relative abundance).
 #' @param rank      Taxonomic rank.
 #' @param group_var Metadata variable defining groups.
-#' @param top_n     Number of top taxa to display.
+#' @param top_n     Number of top taxa to display ("Other" is shown in
+#'   addition and does not count towards N).
+#' @param error_bar What the error bars show: "se" (standard error of the
+#'   mean, default), "sd" (standard deviation), "ci95" (95% confidence
+#'   interval of the mean) or "none".
 #' @return A ggplot object.
 
 plot_mean_composition <- function(ps,
                                    rank      = "Phylum",
                                    group_var = "group",
-                                   top_n     = 10) {
+                                   top_n     = 10,
+                                   error_bar = c("se", "sd", "ci95", "none")) {
 
   cat("=== Mean composition per group ===\n")
+
+  error_bar <- match.arg(error_bar)
 
   ps_melt <- psmelt(ps) %>%
     mutate(taxon = as.character(.data[[rank]])) %>%
@@ -328,44 +335,87 @@ plot_mean_composition <- function(ps,
 
   ps_melt$taxon[is.na(ps_melt$taxon)] <- "Unknown"
 
-  # Select top N taxa overall
+  # Select top N taxa overall. "Other" is not a taxon: it is kept, shown
+  # last and in grey, and does not count towards the N.
   top_taxa <- ps_melt %>%
+    filter(taxon != "Other") %>%
     group_by(taxon) %>%
     summarise(mean_abund = mean(Abundance)) %>%
     arrange(desc(mean_abund)) %>%
     slice_head(n = top_n) %>%
     pull(taxon)
 
+  has_other  <- "Other" %in% ps_melt$taxon
+  taxa_shown <- c(top_taxa, if (has_other) "Other")
+
   ps_melt <- ps_melt %>%
-    filter(taxon %in% top_taxa) %>%
-    mutate(taxon = factor(taxon, levels = rev(top_taxa)))
+    filter(taxon %in% taxa_shown) %>%
+    mutate(taxon = factor(taxon, levels = taxa_shown))
 
   # Summary stats per group
   summary_df <- ps_melt %>%
     group_by(.data[[group_var]], taxon) %>%
     summarise(
+      n_samp     = n(),
       mean_abund = mean(Abundance),
-      se_abund   = sd(Abundance) / sqrt(n()),
+      sd_abund   = sd(Abundance),
       .groups    = "drop"
+    ) %>%
+    mutate(
+      se_abund = sd_abund / sqrt(n_samp),
+      err = switch(error_bar,
+        se   = se_abund,
+        sd   = sd_abund,
+        ci95 = suppressWarnings(qt(0.975, df = pmax(n_samp - 1, 1))) * se_abund,
+        none = NA_real_
+      ),
+      err = ifelse(n_samp < 2, NA_real_, err),
+      # a proportion cannot be below 0
+      ymin = pmax(mean_abund - err, 0),
+      ymax = mean_abund + err
     )
 
-  n_taxa   <- length(top_taxa)
-  col_vals <- TAXA_PALETTE[seq_len(n_taxa)]
-  names(col_vals) <- rev(top_taxa)
+  err_label <- switch(error_bar,
+    se   = "Error bars: standard error of the mean (SE)",
+    sd   = "Error bars: standard deviation (SD)",
+    ci95 = "Error bars: 95% confidence interval of the mean",
+    none = "No error bars"
+  )
+
+  # Group labels with the number of samples
+  n_per_group <- ps_melt %>%
+    dplyr::distinct(Sample, .data[[group_var]]) %>%
+    dplyr::count(.data[[group_var]], name = "n_samp")
+  x_labels <- setNames(
+    paste0(n_per_group[[group_var]], "\n(n = ", n_per_group$n_samp, ")"),
+    n_per_group[[group_var]]
+  )
+
+  col_vals <- TAXA_PALETTE[seq_along(top_taxa)]
+  names(col_vals) <- top_taxa
+  if (has_other) col_vals <- c(col_vals, Other = "#b0bec5")
 
   p <- ggplot(summary_df,
               aes(x = .data[[group_var]], y = mean_abund, fill = taxon)) +
-    geom_col(position = position_dodge(0.85), width = 0.8) +
-    geom_errorbar(
-      aes(ymin = mean_abund - se_abund, ymax = mean_abund + se_abund),
-      position = position_dodge(0.85), width = 0.25, linewidth = 0.5
-    ) +
+    geom_col(position = position_dodge(0.85), width = 0.8)
+
+  if (error_bar != "none") {
+    p <- p +
+      geom_errorbar(
+        aes(ymin = ymin, ymax = ymax),
+        position = position_dodge(0.85), width = 0.25, linewidth = 0.5,
+        na.rm = TRUE
+      )
+  }
+
+  p <- p +
     scale_fill_manual(values = col_vals, name = rank) +
+    scale_x_discrete(labels = x_labels) +
     scale_y_continuous(labels = percent_format(accuracy = 0.1),
                        expand  = expansion(mult = c(0, 0.05))) +
     labs(
       title    = paste0("Mean ", rank, " abundance by group"),
-      subtitle = paste0("Top ", top_n, " taxa | Error bars = ±1 SE"),
+      subtitle = paste0("Top ", length(top_taxa), " taxa | ", err_label),
       x        = group_var,
       y        = "Mean relative abundance"
     ) +
