@@ -877,15 +877,43 @@ plot_phylum_drilldown <- function(ps,
 #' Calculate and visualise the Firmicutes:Bacteroidota ratio per sample.
 #'
 #' This ratio is widely reported in gut microbiome studies as a marker of
-#' dysbiosis, though its clinical significance remains debated.
+#' dysbiosis, though its clinical significance remains debated. It was
+#' designed for gut data and is not meaningful for other environments.
 #'
-#' @param ps        A phyloseq object.
-#' @param group_var Metadata variable for group comparisons.
-#' @return A list: plot and ratio data frame.
+#' Samples in which either phylum is absent have no defined ratio and are
+#' excluded from the plot and the tests.
+#'
+#' Group comparisons are non-parametric and run on the log2 ratio:
+#'   unpaired: Kruskal-Wallis overall, Dunn's test for the pairs
+#'             (Wilcoxon rank-sum when only two groups can be tested)
+#'   paired:   Wilcoxon signed-rank for the pairs, on subjects sampled in both
+#'             groups; Friedman overall only for a repeated-measures design
+#'             (more than two groups, subjects sampled in every group)
+#'
+#' @param ps         A phyloseq object.
+#' @param group_var  Metadata variable for group comparisons.
+#' @param design     "unpaired" (default) or "paired".
+#' @param pair_var   Metadata variable identifying the subject (paired only).
+#' @param show_pairs Comparisons to draw as brackets, as "A vs B" keys taken
+#'                   from the pairwise table. Default = NULL (none).
+#' @param p_adjust   P-value adjustment method. Default = "BH".
+#' @return A list: plot, ratio data frame, overall test, pairwise table,
+#'         test label and number of samples without a ratio.
 
-calculate_fb_ratio <- function(ps, group_var = NULL) {
+calculate_fb_ratio <- function(ps, group_var = NULL,
+                               design     = c("unpaired", "paired"),
+                               pair_var   = NULL,
+                               show_pairs = NULL,
+                               p_adjust   = "BH") {
+
+  design <- match.arg(design)
 
   cat("=== Firmicutes:Bacteroidota ratio ===\n")
+
+  tt <- tax_table(ps, errorIfNULL = FALSE)
+  if (is.null(tt) || !"Phylum" %in% colnames(tt)) {
+    stop("The F:B ratio needs a 'Phylum' column in the taxonomy table.")
+  }
 
   ps_rel <- transform_sample_counts(ps, function(x) x / sum(x))
   ps_phy <- fast_tax_glom(ps_rel, taxrank = "Phylum", NArm = FALSE)
@@ -897,47 +925,299 @@ calculate_fb_ratio <- function(ps, group_var = NULL) {
       Phylum %in% c("Bacteroidota", "Bacteroidetes")    ~ "Bacteroidota"
     ))
 
+  if (nrow(ps_melt) == 0) {
+    stop("Neither Firmicutes (Bacillota) nor Bacteroidota (Bacteroidetes) was found in this dataset.")
+  }
+
   ratio_df <- ps_melt %>%
     group_by(Sample, phylum_group) %>%
-    summarise(abund = sum(Abundance), .groups = "drop") %>%
+    summarise(abund = sum(Abundance, na.rm = TRUE), .groups = "drop") %>%
     pivot_wider(names_from = phylum_group, values_from = abund,
-                values_fill = 0) %>%
+                values_fill = 0)
+  for (ph in c("Firmicutes", "Bacteroidota")) {
+    if (!ph %in% colnames(ratio_df)) ratio_df[[ph]] <- 0
+  }
+  ratio_df <- ratio_df %>%
     mutate(
-      FB_ratio = ifelse(Bacteroidota > 0,
+      FB_ratio = ifelse(Firmicutes > 0 & Bacteroidota > 0,
                         Firmicutes / Bacteroidota, NA),
-      log_FB   = log2(FB_ratio + 0.001)
+      log_FB   = log2(FB_ratio)
     )
 
   # Add metadata
-  meta_df <- data.frame(sample_data(ps)) %>% rownames_to_column("Sample")
+  meta_df <- data.frame(sample_data(ps), check.names = FALSE) %>%
+    rownames_to_column("Sample")
+  meta_df <- meta_df[, !duplicated(colnames(meta_df)), drop = FALSE]
   ratio_df <- left_join(ratio_df, meta_df, by = "Sample")
 
-  cat("  Median F:B ratio:", round(median(ratio_df$FB_ratio, na.rm = TRUE), 2), "\n\n")
+  n_excluded <- sum(is.na(ratio_df$FB_ratio))
+  cat("  Median F:B ratio:", round(median(ratio_df$FB_ratio, na.rm = TRUE), 2), "\n")
+  cat("  Samples without a ratio (one phylum absent):", n_excluded, "\n\n")
 
   fill_var <- if (!is.null(group_var) && group_var %in% colnames(ratio_df)) group_var else NULL
+  if (!is.null(pair_var) && (!nzchar(pair_var) || !pair_var %in% colnames(ratio_df))) {
+    pair_var <- NULL
+  }
 
-  p <- ggplot(ratio_df,
-              aes(x = if (!is.null(fill_var)) .data[[fill_var]] else "All",
-                  y = log_FB,
-                  fill = if (!is.null(fill_var)) .data[[fill_var]] else "All")) +
-    geom_boxplot(alpha = 0.75, outlier.size = 1) +
-    geom_jitter(width = 0.15, alpha = 0.5, size = 1.5) +
+  stats <- fb_ratio_tests(ratio_df, fill_var, design = design,
+                          pair_var = pair_var, p_adjust = p_adjust)
+
+  p <- plot_fb_ratio(ratio_df, fill_var, pairwise = stats$pairwise,
+                     show_pairs = show_pairs, test_label = stats$test_label)
+
+  return(list(plot = p, data = ratio_df, group_var = fill_var,
+              overall = stats$overall, pairwise = stats$pairwise,
+              test_label = stats$test_label, design = design,
+              n_excluded = n_excluded))
+}
+
+
+#' Format a p-value with three decimals for plots and tables.
+#'
+#' @param p        Numeric vector of p-values.
+#' @param prefix   If TRUE returns "p = 0.012", otherwise "0.012".
+#' @return A character vector.
+
+fb_format_p <- function(p, prefix = FALSE) {
+  out <- ifelse(is.na(p), "",
+         ifelse(p < 0.001,
+                if (prefix) "p < 0.001" else "< 0.001",
+                paste0(if (prefix) "p = " else "", formatC(p, format = "f", digits = 3))))
+  out
+}
+
+
+#' Non-parametric group comparisons of the log2 F:B ratio.
+#'
+#' @param ratio_df  Data frame returned by calculate_fb_ratio()$data.
+#' @param group_var Grouping variable (column of ratio_df), or NULL.
+#' @param design    "unpaired" or "paired".
+#' @param pair_var  Subject variable (paired only).
+#' @param p_adjust  P-value adjustment method.
+#' @param min_n     Minimum samples per group for an unpaired test. Default = 3.
+#' @param min_pairs Minimum shared subjects for a paired test. Default = 6.
+#' @return A list: overall (test, statistic, p, n, note), pairwise table and
+#'         test_label.
+
+fb_ratio_tests <- function(ratio_df, group_var = NULL,
+                           design    = c("unpaired", "paired"),
+                           pair_var  = NULL,
+                           p_adjust  = "BH",
+                           min_n     = 3,
+                           min_pairs = 6) {
+
+  design <- match.arg(design)
+  empty  <- list(overall = NULL, pairwise = NULL, test_label = NULL)
+  if (is.null(group_var)) return(empty)
+
+  df <- ratio_df[!is.na(ratio_df$log_FB) & !is.na(ratio_df[[group_var]]), , drop = FALSE]
+  if (nrow(df) == 0) return(empty)
+  lev <- if (is.factor(df[[group_var]])) levels(droplevels(df[[group_var]])) else
+    sort(unique(as.character(df[[group_var]])))
+  df$.grp <- factor(as.character(df[[group_var]]), levels = lev)
+  if (length(lev) < 2) return(empty)
+
+  pairs <- t(utils::combn(lev, 2))
+  pw <- data.frame(group1 = pairs[, 1], group2 = pairs[, 2],
+                   stringsAsFactors = FALSE)
+  pw$key <- paste(pw$group1, "vs", pw$group2)
+  pw$n1 <- NA_integer_; pw$n2 <- NA_integer_; pw$n_pairs <- NA_integer_
+  pw$p  <- NA_real_;    pw$p_adj <- NA_real_
+  pw$testable <- FALSE; pw$note <- ""
+  overall <- list(test = NA_character_, statistic = NA_real_, p = NA_real_,
+                  n = NA_integer_, note = "")
+
+  if (design == "unpaired") {
+
+    n_grp <- table(df$.grp)
+    pw$n1 <- as.integer(n_grp[pw$group1])
+    pw$n2 <- as.integer(n_grp[pw$group2])
+    pw$testable <- pw$n1 >= min_n & pw$n2 >= min_n
+    pw$note[!pw$testable] <- "too few samples to test"
+    ok_lev <- names(n_grp)[n_grp >= min_n]
+
+    if (length(ok_lev) == 2) {
+      d2  <- droplevels(df[df$.grp %in% ok_lev, , drop = FALSE])
+      wt  <- suppressWarnings(stats::wilcox.test(log_FB ~ .grp, data = d2))
+      idx <- which(pw$testable)
+      pw$p[idx] <- wt$p.value
+      overall <- list(test = "Wilcoxon rank-sum test",
+                      statistic = unname(wt$statistic), p = wt$p.value,
+                      n = nrow(d2), note = "")
+      pair_test <- "Wilcoxon rank-sum test"
+    } else if (length(ok_lev) > 2) {
+      d2 <- droplevels(df[df$.grp %in% ok_lev, , drop = FALSE])
+      kt <- stats::kruskal.test(log_FB ~ .grp, data = d2)
+      overall <- list(test = "Kruskal-Wallis test",
+                      statistic = unname(kt$statistic), p = kt$p.value,
+                      n = nrow(d2), note = "")
+      dt <- rstatix::dunn_test(d2, log_FB ~ .grp, p.adjust.method = "none")
+      k1 <- paste(dt$group1, "vs", dt$group2)
+      k2 <- paste(dt$group2, "vs", dt$group1)
+      m  <- match(pw$key, k1); m[is.na(m)] <- match(pw$key, k2)[is.na(m)]
+      pw$p[pw$testable] <- dt$p[m[pw$testable]]
+      pair_test <- "Dunn's test"
+    } else {
+      overall$note <- paste0("No test: fewer than two groups have at least ",
+                             min_n, " samples.")
+      pair_test <- "Dunn's test"
+    }
+    if (length(ok_lev) < length(lev) && length(ok_lev) >= 2) {
+      overall$note <- paste0("Groups with fewer than ", min_n,
+                             " samples are left out of the tests.")
+    }
+    test_label <- if (length(ok_lev) == 2) {
+      "Unpaired samples: Wilcoxon rank-sum test"
+    } else {
+      paste0("Unpaired samples: Kruskal-Wallis test, then ", pair_test,
+             " for the pairs")
+    }
+
+  } else {
+
+    if (is.null(pair_var)) {
+      overall$note <- "Choose the variable that identifies the subject."
+      pw$note <- "no subject variable chosen"
+      return(list(overall = overall, pairwise = pw,
+                  test_label = "Paired samples: Wilcoxon signed-rank test"))
+    }
+    df$.subj <- as.character(df[[pair_var]])
+    df <- df[!is.na(df$.subj), , drop = FALSE]
+    # one value per subject and group (mean when a subject has several samples)
+    wide <- tapply(df$log_FB, list(df$.subj, df$.grp), mean)
+
+    for (i in seq_len(nrow(pw))) {
+      x <- wide[, pw$group1[i]]; y <- wide[, pw$group2[i]]
+      both <- !is.na(x) & !is.na(y)
+      pw$n_pairs[i] <- sum(both)
+      pw$n1[i] <- sum(both); pw$n2[i] <- sum(both)
+      if (sum(both) >= min_pairs) {
+        wt <- suppressWarnings(stats::wilcox.test(x[both], y[both], paired = TRUE))
+        pw$p[i] <- wt$p.value
+        pw$testable[i] <- !is.na(wt$p.value)
+        if (is.na(wt$p.value)) pw$note[i] <- "no difference between the paired values"
+      } else {
+        pw$note[i] <- "too few samples to test"
+      }
+    }
+
+    complete <- wide[stats::complete.cases(wide), , drop = FALSE]
+    if (length(lev) == 2) {
+      overall <- list(test = "Wilcoxon signed-rank test",
+                      statistic = NA_real_, p = pw$p[1], n = pw$n_pairs[1],
+                      note = if (!pw$testable[1]) pw$note[1] else "")
+    } else if (nrow(complete) >= min_pairs) {
+      ft <- stats::friedman.test(complete)
+      overall <- list(test = "Friedman test (repeated measures)",
+                      statistic = unname(ft$statistic), p = ft$p.value,
+                      n = nrow(complete),
+                      note = paste0("Uses only the ", nrow(complete),
+                                    " subjects sampled in every group."))
+    } else {
+      overall$note <- paste0(
+        "No overall test: the Friedman test needs a repeated-measures design ",
+        "(the same subjects sampled in every group); only ", nrow(complete),
+        " subject(s) meet this. Read the pairwise tests instead.")
+    }
+    test_label <- "Paired samples: Wilcoxon signed-rank test for the pairs"
+  }
+
+  n_tested <- sum(pw$testable)
+  if (n_tested > 0) {
+    pw$p_adj[pw$testable] <- stats::p.adjust(pw$p[pw$testable], method = p_adjust)
+  }
+  test_label <- paste0(test_label, " | ", p_adjust, "-adjusted p across ",
+                       n_tested, " comparison", if (n_tested != 1) "s")
+
+  list(overall = overall, pairwise = pw, test_label = test_label)
+}
+
+
+#' Boxplot of the log2 F:B ratio, with optional comparison brackets.
+#'
+#' @param ratio_df   Data frame returned by calculate_fb_ratio()$data.
+#' @param group_var  Grouping variable, or NULL.
+#' @param pairwise   Pairwise table from fb_ratio_tests(), or NULL.
+#' @param show_pairs Keys ("A vs B") of the comparisons to draw.
+#' @param test_label Text describing the test, added to the caption.
+#' @return A ggplot object.
+
+plot_fb_ratio <- function(ratio_df, group_var = NULL, pairwise = NULL,
+                          show_pairs = NULL, test_label = NULL) {
+
+  df <- ratio_df[!is.na(ratio_df$log_FB), , drop = FALSE]
+  if (!is.null(group_var)) {
+    df  <- df[!is.na(df[[group_var]]), , drop = FALSE]
+    lev <- if (is.factor(df[[group_var]])) levels(droplevels(df[[group_var]])) else
+      sort(unique(as.character(df[[group_var]])))
+    df$.grp <- factor(as.character(df[[group_var]]), levels = lev)
+  } else {
+    lev <- "All"
+    df$.grp <- factor("All")
+  }
+  if (nrow(df) == 0) stop("No sample has both Firmicutes and Bacteroidota, so no ratio can be shown.")
+
+  n_lab <- table(df$.grp)
+  x_lab <- stats::setNames(paste0(names(n_lab), "\n(n=", as.integer(n_lab), ")"),
+                           names(n_lab))
+
+  caption <- "Note: clinical significance of F:B ratio remains debated"
+  if (!is.null(test_label)) {
+    caption <- paste0(gsub(" | ", "\n", test_label, fixed = TRUE), "\n", caption)
+  }
+
+  p <- ggplot(df, aes(x = .grp, y = log_FB, fill = .grp)) +
+    geom_boxplot(alpha = 0.75, outlier.shape = NA) +
+    geom_jitter(width = 0.15, height = 0, alpha = 0.5, size = 1.5) +
     geom_hline(yintercept = 0, linetype = "dashed",
                colour = "grey50", linewidth = 0.7) +
-    annotate("text", x = 0.55, y = 0.1,
-             label = "F:B = 1", hjust = 0, size = 3, colour = "grey50") +
+    annotate("text", x = Inf, y = 0, vjust = -0.5,
+             label = "F:B = 1", hjust = 1.1, size = 3, colour = "grey50") +
     scale_fill_group() +
+    scale_x_discrete(labels = x_lab) +
     labs(
       title    = "Firmicutes : Bacteroidota ratio",
       subtitle = "log2 ratio | 0 = equal abundance | >0 = Firmicutes dominant",
-      x        = if (!is.null(fill_var)) fill_var else "",
+      x        = if (!is.null(group_var)) group_var else "",
       y        = "log2(F:B ratio)",
-      fill     = fill_var,
-      caption  = "Note: clinical significance of F:B ratio remains debated"
+      fill     = group_var,
+      caption  = caption
     ) +
-    theme_microbiome()
+    theme_microbiome() +
+    theme(legend.position = "none")
 
-  return(list(plot = p, data = ratio_df))
+  if (length(lev) > 4) {
+    p <- p + theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  }
+
+  # Brackets for the chosen comparisons (adjusted p-value)
+  if (!is.null(pairwise) && length(show_pairs) > 0) {
+    br <- pairwise[pairwise$key %in% show_pairs & pairwise$testable, , drop = FALSE]
+    if (nrow(br) > 0) {
+      br$x1 <- match(br$group1, lev); br$x2 <- match(br$group2, lev)
+      br <- br[order(abs(br$x2 - br$x1), pmin(br$x1, br$x2)), , drop = FALSE]
+      rng  <- range(df$log_FB)
+      span <- if (diff(rng) > 0) diff(rng) else 1
+      step <- span * 0.09
+      tick <- span * 0.015
+      br$y <- max(rng) + step * seq_len(nrow(br))
+      br$label <- fb_format_p(br$p_adj, prefix = TRUE)
+      for (i in seq_len(nrow(br))) {
+        p <- p +
+          annotate("segment", x = br$x1[i], xend = br$x2[i],
+                   y = br$y[i], yend = br$y[i], linewidth = 0.4) +
+          annotate("segment", x = br$x1[i], xend = br$x1[i],
+                   y = br$y[i], yend = br$y[i] - tick, linewidth = 0.4) +
+          annotate("segment", x = br$x2[i], xend = br$x2[i],
+                   y = br$y[i], yend = br$y[i] - tick, linewidth = 0.4) +
+          annotate("text", x = (br$x1[i] + br$x2[i]) / 2, y = br$y[i],
+                   label = br$label[i], vjust = -0.4, size = 3.3)
+      }
+      p <- p + expand_limits(y = max(br$y) + step * 0.7)
+    }
+  }
+
+  p
 }
 
 
