@@ -716,8 +716,9 @@ qc_filter_samples <- function(ps,
   cat("  Removed (low taxa  <", min_taxa,  "):", length(removed_taxa), "\n")
   cat("  Total removed:           ", length(removed_all), "\n")
 
-  ps_filtered <- prune_samples(pass_both, ps)
-  cat("  Samples after filtering: ", nsamples(ps_filtered), "\n\n")
+  # No sample passes: return NULL instead of failing
+  ps_filtered <- if (any(pass_both)) prune_samples(pass_both, ps) else NULL
+  cat("  Samples after filtering: ", sum(pass_both), "\n\n")
 
   return(list(
     ps_filtered     = ps_filtered,
