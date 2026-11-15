@@ -215,7 +215,7 @@ mod_qc_ui <- function(id) {
         value = "taxa_filter",
 
         layout_columns(
-          col_widths = c(3, 9),
+          col_widths = c(3, 9, 12),
 
           card(
             class = "border-0 bg-light",
@@ -251,6 +251,81 @@ mod_qc_ui <- function(id) {
           card(
             card_body(
               plotOutput(ns("taxa_filter_plot"), height = "500px")
+            )
+          ),
+
+          # Help
+          card(
+            card_header(icon("circle-info"), " How to read this tab"),
+            card_body(
+              class = "small",
+              layout_columns(
+                col_widths = c(6, 6),
+                tags$div(
+                  tags$h6(class = "fw-bold", "What you are looking at"),
+                  tags$ul(
+                    tags$li(tags$strong("The question: "),
+                            "which taxa are too rare to be analysed reliably?"),
+                    tags$li(tags$strong("Each point is one taxon. "),
+                            "Left to right: the fraction of samples it is found in (prevalence). ",
+                            "Bottom to top: its total reads across all samples, on a log scale ",
+                            "(2 = 100 reads, 4 = 10,000 reads)."),
+                    tags$li(tags$strong("Red dashed lines: "),
+                            "vertical = minimum prevalence, horizontal = minimum total abundance. ",
+                            "A taxon is kept only if it passes both, so the kept taxa are in the ",
+                            "top-right area. Crosses are removed taxa."),
+                    tags$li(tags$strong("Result: "),
+                            "how many taxa remain. Move the sliders and click Apply filter to update."),
+                    tags$li(tags$strong("Taxa are removed, not samples. "),
+                            "Rare taxa are usually many in number but hold few reads, so a large ",
+                            "share of taxa can be removed while most reads are kept.")
+                  ),
+                  tags$h6(class = "fw-bold mt-3", "Choosing values"),
+                  tags$ul(
+                    tags$li(tags$strong("Min prevalence: "),
+                            "0.05 to 0.10 (present in 5 to 10% of samples) is commonly used. ",
+                            "Think in samples: 0.10 of 26 samples means at least 3 samples."),
+                    tags$li("If your groups are very different (for example body sites or ",
+                            "environments), a taxon can be real but present in one group only. ",
+                            "Use a lower prevalence so group-specific taxa are not lost."),
+                    tags$li(tags$strong("Min total abundance: "),
+                            "10 reads removes taxa seen only a handful of times. ",
+                            "Raise it for very deeply sequenced data.")
+                  )
+                ),
+                tags$div(
+                  tags$h6(class = "fw-bold", "How this affects the rest of the analysis"),
+                  tags$ul(
+                    tags$li(tags$strong("Differential abundance: "),
+                            "benefits most. Fewer taxa are tested, so the correction for ",
+                            "multiple testing is less severe, and results driven by taxa that ",
+                            "are almost all zeros are avoided."),
+                    tags$li(tags$strong("Networks and correlations: "),
+                            "rare taxa produce unreliable correlations; filtering makes these ",
+                            "analyses more stable and faster."),
+                    tags$li(tags$strong("Beta diversity: "),
+                            "abundance-based distances (Bray-Curtis, weighted UniFrac) change little. ",
+                            "Presence/absence distances (Jaccard, unweighted UniFrac) are more ",
+                            "sensitive to rare taxa and change more."),
+                    tags$li(tags$strong("Alpha diversity: "),
+                            "richness (Observed, Chao1) drops when rare taxa are removed, so alpha ",
+                            "diversity is normally calculated on unfiltered data. Shannon and ",
+                            "Simpson change little."),
+                    tags$li(tags$strong("Composition: "),
+                            "barplots at phylum or genus level barely change, because the removed ",
+                            "taxa hold few reads."),
+                    tags$li(tags$strong("A stricter filter "),
+                            "gives cleaner statistics but can remove real low-abundance organisms. ",
+                            "Report the thresholds you used.")
+                  ),
+                  tags$h6(class = "fw-bold mt-3", "Where the filtered data are used"),
+                  tags$ul(
+                    tags$li("The filtered dataset is used by the Composition tab and by the ",
+                            "download on the Final dataset tab."),
+                    tags$li("The Alpha, Beta and DA tabs currently use the data as uploaded.")
+                  )
+                )
+              )
             )
           )
         )
