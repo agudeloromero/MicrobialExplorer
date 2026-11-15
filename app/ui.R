@@ -2,15 +2,8 @@
 # ui.R — MicrobialExplorer Shiny App
 # =============================================================================
 
-ui <- page_navbar(
-  title = tags$span(
-    if (file.exists("www/logo.png"))
-      tags$img(src = "logo.png", height = "28px", style = "margin-right:8px;"),
-    APP_TITLE,
-    tags$small(class = "text-muted ms-2 fs-6 fw-normal", APP_VERSION)
-  ),
-  window_title = APP_TITLE,
-  id = "top_nav",
+ui <- page_fluid(
+  title = APP_TITLE,
   theme = bs_theme(
     version    = 5,
     bootswatch = "flatly",
@@ -20,95 +13,69 @@ ui <- page_navbar(
     base_font  = font_google("Inter"),
     code_font  = font_google("Fira Code")
   ),
-  fillable = FALSE,
+  class = "me-page",
 
-  # ── Sidebar ──────────────────────────────────────────────────────────────
-  sidebar = sidebar(
-    width = 300,
-    open  = "open",
+  # useShinyjs must be called inside the UI
+  useShinyjs(),
+  tags$head(
+    tags$link(rel = "stylesheet", href = "custom.css")
+  ),
 
-    # Upload module UI (defined in mod_upload.R)
-    mod_upload_ui("upload"),
-
-    hr(),
-
-    # ── Data summary card — populated by server once data is loaded ──────
-    conditionalPanel(
-      condition = "output.data_loaded",
-
-      card(
-        class = "border-0 bg-light p-2",
-        card_body(
-          class = "p-2",
-          tags$h6(class = "fw-bold mb-2",
-                  icon("database"), " Dataset summary"),
-          uiOutput("sidebar_summary")
-        )
-      ),
-
-      hr(),
-
-      # ── Global selectors ─────────────────────────────────────────────
-      tags$h6(class = "fw-bold mb-2 text-muted text-uppercase small",
-              "Analysis parameters"),
-
-      selectInput(
-        "group_variable",
-        label = tooltip(
-          tags$span("Group variable ", icon("circle-question")),
-          "Categorical metadata column used for group comparisons across all modules."
-        ),
-        choices  = NULL,
-        selected = NULL
-      ),
-
-      selectInput(
-        "tax_rank",
-        label = tooltip(
-          tags$span("Taxonomic rank ", icon("circle-question")),
-          "Rank used for composition and differential abundance analyses."
-        ),
-        choices  = NULL,
-        selected = NULL
-      ),
-
-      sliderInput(
-        "prev_threshold",
-        label = tooltip(
-          tags$span("Prevalence threshold ", icon("circle-question")),
-          "Minimum proportion of samples a taxon must appear in (used for filtering and networks)."
-        ),
-        min   = 0.01, max = 0.5,
-        value = 0.10, step = 0.01,
-        ticks = FALSE
-      ),
-
-      sliderInput(
-        "abund_threshold",
-        label = tooltip(
-          tags$span("Abundance threshold ", icon("circle-question")),
-          "Minimum read count a taxon must have in at least one sample."
-        ),
-        min   = 1, max = 50,
-        value = 5, step = 1,
-        ticks = FALSE
-      ),
-
-      # ── Warnings panel ────────────────────────────────────────────────
-      uiOutput("sidebar_warnings")
+  # ── Top banner: title on the left, housekeeping links on the right ───────
+  tags$div(
+    class = "me-banner",
+    tags$span(
+      class = "me-brand",
+      if (file.exists("www/logo.png"))
+        tags$img(src = "logo.png", height = "28px", style = "margin-right:8px;"),
+      APP_TITLE,
+      tags$small(class = "me-version ms-2 fs-6 fw-normal", APP_VERSION)
+    ),
+    tags$div(
+      class = "me-banner-links",
+      actionLink("nav_home",   label = tagList(icon("house"), " Home")),
+      actionLink("nav_export", label = tagList(icon("download"), " Export")),
+      tags$a(
+        href   = "https://github.com/agudeloromero/MicrobialExplorer",
+        target = "_blank",
+        icon("github"), " GitHub"
+      )
     )
   ),
 
-  # ── Nav panels ───────────────────────────────────────────────────────────
+  # ── Strip: group variable and data in use (once data is loaded) ──────────
+  conditionalPanel(
+    condition = "output.data_loaded",
+    tags$div(
+      class = "me-strip",
+      tags$div(
+        class = "me-strip-group",
+        tooltip(
+          tags$span(class = "me-strip-label", "Group variable ",
+                    icon("circle-question")),
+          "Categorical metadata column used for group comparisons across all modules."
+        ),
+        selectInput("group_variable", label = NULL,
+                    choices = NULL, selected = NULL, width = "240px")
+      ),
+      uiOutput("data_in_use", class = "me-strip-data")
+    )
+  ),
 
-  # 1. Welcome / upload landing
-  nav_panel(
-    title = tagList(icon("house"), " Home"),
+  # ── Analysis menu (left) and pages ───────────────────────────────────────
+  tags$div(
+    class = "me-main",
+    navset_pill_list(
+      id       = "top_nav",
+      selected = "home",
+      widths   = c(2, 10),
+      well     = FALSE,
+
+  # 1. Welcome / upload landing (opened from the banner)
+  nav_panel_hidden(
     value = "home",
     mod_upload_landing_ui("upload")
   ),
-
-  nav_spacer(),
 
   # 2. Dashboard
   nav_panel(
@@ -187,29 +154,12 @@ ui <- page_navbar(
     uiOutput("longitudinal_ui")
   ),
 
-  nav_spacer(),
-
-  # Export
-  nav_panel(
-    title = tagList(icon("download"), " Export"),
+  # Export (opened from the banner)
+  nav_panel_hidden(
     value = "export",
     uiOutput("export_ui")
-  ),
+  )
 
-  # ── Footer nav items ─────────────────────────────────────────────────────
-  nav_item(
-    tags$a(
-      href   = "https://github.com/agudeloromero/MicrobialExplorer",
-      target = "_blank",
-      icon("github"), " GitHub"
-    )
-  ),
-
-  # useShinyjs must be called inside the UI
-  header = tagList(
-    useShinyjs(),
-    tags$head(
-      tags$link(rel = "stylesheet", href = "custom.css")
     )
   )
 )

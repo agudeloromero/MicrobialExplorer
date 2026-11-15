@@ -14,7 +14,7 @@ server <- function(input, output, session) {
   })
   outputOptions(output, "data_loaded", suspendWhenHidden = FALSE)
 
-  # ── Populate sidebar selectors once data is available ─────────────────────
+  # ── Populate the group variable selector once data is available ───────────
   observeEvent(upload_data$features, {
     feat <- upload_data$features
     req(feat)
@@ -24,56 +24,26 @@ server <- function(input, output, session) {
       choices  = c("None" = "", feat$group_vars),
       selected = if (length(feat$group_vars) > 0) feat$group_vars[1] else ""
     )
-
-    # Taxonomic rank selector
-    if (feat$has_taxonomy && length(feat$avail_ranks) > 0) {
-      preferred <- intersect(c("Genus", "Family", "Order", "Phylum"), feat$avail_ranks)
-      default   <- if (length(preferred) > 0) preferred[1] else feat$avail_ranks[1]
-      updateSelectInput(session, "tax_rank",
-        choices  = feat$avail_ranks,
-        selected = default
-      )
-      shinyjs::enable("tax_rank")
-    } else {
-      updateSelectInput(session, "tax_rank",
-        choices  = c("No taxonomy" = ""),
-        selected = ""
-      )
-      shinyjs::disable("tax_rank")
-    }
   })
 
-  # ── Sidebar data summary ───────────────────────────────────────────────────
-  output$sidebar_summary <- renderUI({
+  # ── Data in use (strip under the banner) ───────────────────────────────────
+  output$data_in_use <- renderUI({
     feat <- upload_data$features
     req(feat)
-
-    data_type_colour <- switch(feat$data_type,
-      counts     = "success",
-      relative   = "warning",
-      normalised = "info",
-      "secondary"
-    )
-
-    tagList(
-      stat_badge("Samples", feat$n_samples),
-      stat_badge("Taxa",    format(feat$n_taxa, big.mark = ",")),
-      stat_badge("Data type",
-                 feat$data_type,
-                 colour = data_type_colour),
-      stat_badge("Taxonomy",
-                 if (feat$has_taxonomy) paste(feat$avail_ranks, collapse = " › ") else "None",
-                 colour = if (feat$has_taxonomy) "success" else "secondary"),
-      stat_badge("Tree",
-                 if (feat$has_tree) "Present" else "None",
-                 colour = if (feat$has_tree) "success" else "secondary"),
-      stat_badge("Metadata vars",
-                 length(feat$sample_vars))
+    tags$span(
+      icon("database"), " Data in use: ",
+      tags$strong(format(feat$n_samples, big.mark = ",")), " samples, ",
+      tags$strong(format(feat$n_taxa, big.mark = ",")), " taxa, ",
+      feat$data_type
     )
   })
 
-  # ── Sidebar warnings ──────────────────────────────────────────────────────
-  output$sidebar_warnings <- renderUI({
+  # ── Banner links ───────────────────────────────────────────────────────────
+  observeEvent(input$nav_home,   nav_select("top_nav", selected = "home"))
+  observeEvent(input$nav_export, nav_select("top_nav", selected = "export"))
+
+  # ── Data notes (shown at the top of the Dashboard) ────────────────────────
+  output$data_notes <- renderUI({
     feat <- upload_data$features
     req(feat)
 
@@ -95,16 +65,13 @@ server <- function(input, output, session) {
 
     if (length(msgs) == 0) return(NULL)
 
-    tagList(
-      hr(),
-      tags$div(
-        class = "alert alert-warning p-2 small",
-        icon("triangle-exclamation"), " ",
-        tags$strong("Notes:"),
-        tags$ul(
-          class = "mb-0 ps-3 mt-1",
-          lapply(msgs, tags$li)
-        )
+    tags$div(
+      class = "alert alert-warning p-2 small",
+      icon("triangle-exclamation"), " ",
+      tags$strong("Notes:"),
+      tags$ul(
+        class = "mb-0 ps-3 mt-1",
+        lapply(msgs, tags$li)
       )
     )
   })
@@ -156,6 +123,9 @@ server <- function(input, output, session) {
 
     avail <- get_module_availability(feat)
 
+    tagList(
+    uiOutput("data_notes"),
+
     layout_columns(
       col_widths = c(4, 4, 4),
 
@@ -204,6 +174,7 @@ server <- function(input, output, session) {
           uiOutput("module_avail_table")
         )
       )
+    )
     )
   })
 
@@ -399,7 +370,7 @@ server <- function(input, output, session) {
           icon("upload", class = "fa-3x mb-3"),
           tags$h5("No data loaded"),
           tags$p(
-            "Upload your data using the panel on the left, ",
+            "Upload your data on the Home page, ",
             "or load a demo dataset to explore ", label, "."
           ),
           actionButton(
