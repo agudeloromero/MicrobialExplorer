@@ -281,3 +281,32 @@ fast_tax_glom <- function(ps, taxrank, NArm = FALSE) {
 
   do.call(phyloseq, parts)
 }
+
+
+#' Colours for groups: the Set2 palette, extended when there are more than
+#' 8 groups (Set2 itself has only 8 colours).
+#'
+#' @param n  Number of groups.
+#' @return A character vector of n colours. Identical to Set2 for n <= 8.
+group_palette <- function(n) {
+  if (n <= 8) {
+    RColorBrewer::brewer.pal(max(3, n), "Set2")[seq_len(n)]
+  } else {
+    grDevices::colorRampPalette(RColorBrewer::brewer.pal(8, "Set2"))(n)
+  }
+}
+
+#' ggplot2 fill / colour scales using group_palette().
+#' Drop-in replacements for scale_fill_brewer(palette = "Set2") and
+#' scale_colour_brewer(palette = "Set2") that do not run out of colours.
+scale_fill_group <- function(...) {
+  args <- list(aesthetics = "fill", palette = group_palette, ...)
+  if (utils::packageVersion("ggplot2") < "3.5.0") args$scale_name <- "group"
+  do.call(ggplot2::discrete_scale, args)
+}
+
+scale_colour_group <- function(...) {
+  args <- list(aesthetics = "colour", palette = group_palette, ...)
+  if (utils::packageVersion("ggplot2") < "3.5.0") args$scale_name <- "group"
+  do.call(ggplot2::discrete_scale, args)
+}
