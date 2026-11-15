@@ -238,12 +238,13 @@ mod_composition_ui <- function(id) {
       value = "heatmap",
 
       layout_columns(
-        col_widths = c(3, 9),
+        col_widths = c(3, 9, 12),
 
         card(
           class = "border-0 bg-light",
           card_body(
             tags$h6(class = "fw-bold", "Parameters"),
+            uiOutput(ns("heat_rank_ui")),
             numericInput(ns("heat_top_n"), "Top N taxa",
                          value = 30, min = 5, max = 60, step = 5),
             selectInput(ns("heat_transform"), "Transformation",
@@ -251,9 +252,19 @@ mod_composition_ui <- function(id) {
                                     "Log10" = "log10",
                                     "Relative abundance" = "relative"),
                         selected = "clr"),
+            checkboxInput(ns("heat_scale"), "Scale each taxon (row z-score)",
+                          value = FALSE),
             uiOutput(ns("heat_group_ui")),
+            selectInput(ns("heat_cols"), "Columns (samples)",
+                        choices = c("Block by group, cluster within each" = "block",
+                                    "Cluster all samples together"        = "cluster",
+                                    "Keep the order of the data"          = "none"),
+                        selected = "block"),
             checkboxInput(ns("heat_cluster_rows"), "Cluster rows (taxa)",
                           value = TRUE),
+            actionButton(ns("heat_reset"),
+                         label = tagList(icon("rotate-left"), " Reset to defaults"),
+                         class = "btn btn-outline-secondary btn-sm w-100"),
             hr(),
             downloadButton(ns("dl_heat"), "Download plot",
                            class = "btn btn-outline-secondary btn-sm w-100")
@@ -263,6 +274,88 @@ mod_composition_ui <- function(id) {
         card(
           card_body(
             plotOutput(ns("heat_plot"), height = "600px")
+          )
+        ),
+
+        # Help
+        card(
+          card_header(icon("circle-info"), " How to read this tab"),
+          card_body(
+            class = "small",
+            layout_columns(
+              col_widths = c(6, 6),
+              tags$div(
+                tags$h6(class = "fw-bold", "What you are looking at"),
+                tags$ul(
+                  tags$li(tags$strong("The question: "),
+                          "which taxa are high or low in which samples, and do samples and ",
+                          "taxa fall into groups with similar patterns?"),
+                  tags$li(tags$strong("Each column is one sample, each row one taxon. "),
+                          "The colour of a cell is the abundance of that taxon in that sample: ",
+                          "red is high, blue is low, white is in between."),
+                  tags$li(tags$strong("The coloured bar on top "),
+                          "shows the group of each sample."),
+                  tags$li(tags$strong("The tree on the left "),
+                          "joins taxa with similar patterns across samples. Taxa on nearby ",
+                          "branches rise and fall together."),
+                  tags$li(tags$strong("The tree on top "),
+                          "(only when all samples are clustered together) joins samples with ",
+                          "similar composition. The lower two branches join, the more alike ",
+                          "they are.")
+                ),
+                tags$h6(class = "fw-bold mt-3", "Why this is useful"),
+                tags$ul(
+                  tags$li("It shows many taxa and all samples at once, where the bar plots ",
+                          "show only the most abundant taxa."),
+                  tags$li("Blocks of red or blue reveal sets of taxa that mark a group of ",
+                          "samples."),
+                  tags$li("Clustering all samples together is an unbiased check: if samples ",
+                          "from the same group end up side by side without being told to, the ",
+                          "groups really differ in composition.")
+                )
+              ),
+              tags$div(
+                tags$h6(class = "fw-bold", "Settings"),
+                tags$ul(
+                  tags$li(tags$strong("Taxonomic rank and Top N taxa: "),
+                          "the level and how many of the most abundant taxa to show."),
+                  tags$li(tags$strong("Transformation: "),
+                          "CLR compares each taxon with the average taxon in the same sample ",
+                          "and is the recommended choice. Log10 shows amounts on a compressed ",
+                          "scale. Relative abundance shows plain proportions, which a few ",
+                          "dominant taxa tend to overwhelm."),
+                  tags$li(tags$strong("Scale each taxon: "),
+                          "colours then show whether a sample is above or below the average ",
+                          "for that taxon (z-score). Use it to see patterns in rare taxa; ",
+                          "you can no longer compare one taxon with another."),
+                  tags$li(tags$strong("Group: "),
+                          "the variable used for the colour bar and for the blocks."),
+                  tags$li(tags$strong("Columns, block by group: "),
+                          "samples of each group are kept together in their own panel, and ",
+                          "ordered by similarity inside it. Use it to compare known groups."),
+                  tags$li(tags$strong("Columns, cluster all samples together: "),
+                          "samples are ordered only by similarity, with the tree on top. ",
+                          "Use it to see whether the groups separate without help."),
+                  tags$li(tags$strong("Columns, keep the order of the data: "),
+                          "no reordering."),
+                  tags$li(tags$strong("Cluster rows: "),
+                          "orders taxa by similarity and draws the tree on the left. ",
+                          "Untick to keep taxa ordered by abundance."),
+                  tags$li(tags$strong("Reset to defaults: "),
+                          "puts every setting back to its starting value.")
+                ),
+                tags$h6(class = "fw-bold mt-3", "Keep in mind"),
+                tags$ul(
+                  tags$li("Clustering uses Euclidean distance and complete linkage on the ",
+                          "values shown. With CLR this is the Aitchison distance."),
+                  tags$li("Clustering always produces a tree, even from noise. Treat it as a ",
+                          "description; use the Beta tab to test whether groups differ."),
+                  tags$li("Sample names are hidden when there are more than 60 samples."),
+                  tags$li(tags$strong("Data in use: "),
+                          "the dataset from the QC tab, including any filter you applied there.")
+                )
+              )
+            )
           )
         )
       )
@@ -436,14 +529,33 @@ mod_composition_server <- function(id, upload_data, ps_qc, parent_input) {
     output$bars_rank_ui  <- renderUI({ .rank_selector("bars_rank", "Taxonomic rank") })
     output$mean_rank_ui  <- renderUI({ .rank_selector("mean_rank", "Taxonomic rank") })
 
-    # Heatmap group/sort selector
+    # Heatmap rank and group selectors
+    output$heat_rank_ui <- renderUI({ .rank_selector("heat_rank", "Taxonomic rank") })
+
     output$heat_group_ui <- renderUI({
       feat <- upload_data$features
       req(feat)
       choices <- c("None" = "", feat$group_vars)
-      selectInput(ns("heat_group"), "Sort columns by",
+      gv      <- parent_input$group_variable
+      selectInput(ns("heat_group"), "Group (colour bar and blocks)",
                   choices  = choices,
-                  selected = "")
+                  selected = if (!is.null(gv) && gv %in% feat$group_vars) gv else "")
+    })
+
+    # Reset the heatmap parameters to their starting values
+    observeEvent(input$heat_reset, {
+      feat <- upload_data$features
+      preferred <- intersect(c("Genus", "Family", "Order", "Phylum"), feat$avail_ranks)
+      gv        <- parent_input$group_variable
+      updateSelectInput(session, "heat_rank",
+                        selected = if (length(preferred) > 0) preferred[1] else feat$avail_ranks[1])
+      updateNumericInput(session, "heat_top_n", value = 30)
+      updateSelectInput(session, "heat_transform", selected = "clr")
+      updateCheckboxInput(session, "heat_scale", value = FALSE)
+      updateSelectInput(session, "heat_group",
+                        selected = if (!is.null(gv) && gv %in% feat$group_vars) gv else "")
+      updateSelectInput(session, "heat_cols", selected = "block")
+      updateCheckboxInput(session, "heat_cluster_rows", value = TRUE)
     })
 
     # Helper: resolve rank
@@ -555,18 +667,21 @@ mod_composition_server <- function(id, upload_data, ps_qc, parent_input) {
     # ── 3. HEATMAP ────────────────────────────────────────────────────────
     heat_plot_obj <- reactive({
       req(ps_work())
-      rank_use <- resolve_rank()   # uses global sidebar
-      # heat_group drives both annotation colour and within-group clustering
+      rank_use <- resolve_rank(input$heat_rank)
+      # heat_group gives the colour bar; heat_cols decides how samples are ordered
       hg <- if (is.null(input$heat_group) || input$heat_group == "") NULL
             else input$heat_group
+      cols_mode <- input$heat_cols %||% "block"
       tryCatch(
         plot_abundance_heatmap(ps_work(),
                                rank            = rank_use,
                                top_n           = input$heat_top_n,
                                group_var       = hg,
                                transform       = input$heat_transform,
-                               cluster_samples = !is.null(hg),
-                               cluster_rows    = isTRUE(input$heat_cluster_rows)),
+                               cluster_samples = cols_mode %in% c("block", "cluster"),
+                               cluster_rows    = isTRUE(input$heat_cluster_rows),
+                               block_by_group  = cols_mode == "block" && !is.null(hg),
+                               scale_rows      = isTRUE(input$heat_scale)),
         error = function(e) { message("[mod_comp] heatmap: ", e$message); NULL }
       )
     })
