@@ -209,7 +209,115 @@ mod_qc_ui <- function(id) {
         )
       ),
 
-      # ── 3. Taxa filtering ────────────────────────────────────────────────
+      # ── 3. Sample filtering ──────────────────────────────────────────────
+      nav_panel(
+        title = tagList(icon("users-slash"), " Sample filter"),
+        value = "sample_filter",
+
+        layout_columns(
+          col_widths = c(3, 9, 12),
+
+          card(
+            class = "border-0 bg-light",
+            card_body(
+              tags$h6(class = "fw-bold", "Filter thresholds"),
+              uiOutput(ns("samp_min_reads_ui")),
+              numericInput(
+                ns("samp_min_taxa"),
+                label = "Min observed taxa",
+                value = 10, min = 1, step = 1
+              ),
+              actionButton(
+                ns("apply_sample_filter"),
+                label = tagList(icon("check"), " Apply filter"),
+                class = "btn btn-success btn-sm w-100 mt-2"
+              ),
+              actionButton(
+                ns("remove_sample_filter"),
+                label = tagList(icon("rotate-left"), " Remove filter"),
+                class = "btn btn-outline-secondary btn-sm w-100 mt-2"
+              ),
+              uiOutput(ns("sample_filter_status")),
+              hr(),
+              tags$h6(class = "fw-bold", "Preview with these values"),
+              uiOutput(ns("sample_filter_summary"))
+            )
+          ),
+
+          card(
+            card_body(
+              tags$h6(class = "fw-bold mb-3", "Samples that would be removed"),
+              DT::dataTableOutput(ns("removed_samples_table")),
+              hr(),
+              tags$h6(class = "fw-bold mb-3", "Samples that would be kept"),
+              DT::dataTableOutput(ns("retained_samples_table"))
+            )
+          ),
+
+          # Help
+          card(
+            card_header(icon("circle-info"), " How to read this tab"),
+            card_body(
+              class = "small",
+              layout_columns(
+                col_widths = c(6, 6),
+                tags$div(
+                  tags$h6(class = "fw-bold", "What you are looking at"),
+                  tags$ul(
+                    tags$li(tags$strong("The question: "),
+                            "which samples have too little data to be analysed reliably?"),
+                    tags$li(tags$strong("Min reads: "),
+                            "samples with fewer total reads are removed. Choose the value from ",
+                            "the Depth and Rarefaction tabs. It is not used when the data are ",
+                            "not raw counts."),
+                    tags$li(tags$strong("Min observed taxa: "),
+                            "samples with fewer different taxa are removed. This catches failed ",
+                            "or nearly empty samples."),
+                    tags$li(tags$strong("Preview: "),
+                            "the counts and the two tables show what the current values would do. ",
+                            "Check which samples would be lost and from which group.")
+                  ),
+                  tags$h6(class = "fw-bold mt-3", "You are in control"),
+                  tags$ul(
+                    tags$li(tags$strong("Nothing is removed until you click Apply filter. "),
+                            "Changing the values only changes the preview."),
+                    tags$li(tags$strong("Apply filter: "),
+                            "the analysis will use only the samples that pass. ",
+                            "The status under the buttons shows what is applied."),
+                    tags$li(tags$strong("Remove filter: "),
+                            "goes back to using all samples."),
+                    tags$li("Loading a new dataset starts again with no filter.")
+                  )
+                ),
+                tags$div(
+                  tags$h6(class = "fw-bold", "How this affects the rest of the analysis"),
+                  tags$ul(
+                    tags$li(tags$strong("Rarefaction depth: "),
+                            "alpha and beta diversity rarefy every sample to the depth of the ",
+                            "shallowest sample that remains. Removing a few shallow samples lets ",
+                            "all the others keep more reads."),
+                    tags$li(tags$strong("Statistical power: "),
+                            "every removed sample is one fewer in its group. Check that no group ",
+                            "becomes too small to compare."),
+                    tags$li(tags$strong("Balance: "),
+                            "if most removed samples come from one group, ask why before removing ",
+                            "them. Low reads can be a real feature of that group (for example ",
+                            "low-biomass samples)."),
+                    tags$li(tags$strong("Taxa filter: "),
+                            "the sample filter is used first, so prevalence in the Taxa filter tab ",
+                            "is calculated on the samples that remain."),
+                    tags$li(tags$strong("A stricter filter "),
+                            "gives more reliable samples but fewer of them. ",
+                            "Report the thresholds you used and how many samples were removed.")
+                  )
+                )
+              )
+            )
+          )
+        )
+      ),
+
+      # ── 4. Taxa filtering ────────────────────────────────────────────────
       nav_panel(
         title = tagList(icon("filter"), " Taxa filter"),
         value = "taxa_filter",
@@ -221,8 +329,6 @@ mod_qc_ui <- function(id) {
             class = "border-0 bg-light",
             card_body(
               tags$h6(class = "fw-bold", "Filter thresholds"),
-              tags$p(class = "text-muted small",
-                     "These mirror the global sidebar sliders."),
               sliderInput(
                 ns("taxa_prev"),
                 label = "Min prevalence",
@@ -230,20 +336,20 @@ mod_qc_ui <- function(id) {
                 value = 0.10, step = 0.01,
                 ticks = FALSE
               ),
-              sliderInput(
-                ns("taxa_abund"),
-                label = "Min total abundance",
-                min = 1, max = 100,
-                value = 10, step = 1,
-                ticks = FALSE
-              ),
+              uiOutput(ns("taxa_abund_ui")),
               actionButton(
                 ns("apply_taxa_filter"),
                 label = tagList(icon("check"), " Apply filter"),
                 class = "btn btn-success btn-sm w-100 mt-2"
               ),
+              actionButton(
+                ns("remove_taxa_filter"),
+                label = tagList(icon("rotate-left"), " Remove filter"),
+                class = "btn btn-outline-secondary btn-sm w-100 mt-2"
+              ),
+              uiOutput(ns("taxa_filter_status")),
               hr(),
-              tags$h6(class = "fw-bold", "Result"),
+              tags$h6(class = "fw-bold", "Preview with these values"),
               uiOutput(ns("taxa_filter_summary"))
             )
           ),
@@ -274,11 +380,29 @@ mod_qc_ui <- function(id) {
                             "vertical = minimum prevalence, horizontal = minimum total abundance. ",
                             "A taxon is kept only if it passes both, so the kept taxa are in the ",
                             "top-right area. Crosses are removed taxa."),
-                    tags$li(tags$strong("Result: "),
-                            "how many taxa remain. Move the sliders and click Apply filter to update."),
+                    tags$li(tags$strong("Preview: "),
+                            "the plot and the counts show what the current slider values would do. ",
+                            "They update as you move the sliders."),
                     tags$li(tags$strong("Taxa are removed, not samples. "),
                             "Rare taxa are usually many in number but hold few reads, so a large ",
                             "share of taxa can be removed while most reads are kept.")
+                  ),
+                  tags$h6(class = "fw-bold mt-3", "You are in control"),
+                  tags$ul(
+                    tags$li(tags$strong("Nothing is removed until you click Apply filter. "),
+                            "Moving the sliders only changes the preview."),
+                    tags$li(tags$strong("Apply filter: "),
+                            "the analysis will use the dataset filtered with these values. ",
+                            "The status under the buttons shows what is applied."),
+                    tags$li(tags$strong("Remove filter: "),
+                            "goes back to using all taxa."),
+                    tags$li(tags$strong("Try different values: "),
+                            "change the sliders, click Apply filter again and look at how your ",
+                            "results change. Conclusions that hold across reasonable values are ",
+                            "the ones to trust."),
+                    tags$li("If a sample filter is applied, it is used first: prevalence is ",
+                            "calculated on the samples that remain."),
+                    tags$li("Loading a new dataset starts again with no filter.")
                   ),
                   tags$h6(class = "fw-bold mt-3", "Choosing values"),
                   tags$ul(
@@ -290,7 +414,8 @@ mod_qc_ui <- function(id) {
                             "Use a lower prevalence so group-specific taxa are not lost."),
                     tags$li(tags$strong("Min total abundance: "),
                             "10 reads removes taxa seen only a handful of times. ",
-                            "Raise it for very deeply sequenced data.")
+                            "Raise it for very deeply sequenced data. It is not used when the ",
+                            "data are not raw counts.")
                   )
                 ),
                 tags$div(
@@ -326,51 +451,6 @@ mod_qc_ui <- function(id) {
                   )
                 )
               )
-            )
-          )
-        )
-      ),
-
-      # ── 4. Sample filtering ──────────────────────────────────────────────
-      nav_panel(
-        title = tagList(icon("users-slash"), " Sample filter"),
-        value = "sample_filter",
-
-        layout_columns(
-          col_widths = c(3, 9),
-
-          card(
-            class = "border-0 bg-light",
-            card_body(
-              tags$h6(class = "fw-bold", "Filter thresholds"),
-              numericInput(
-                ns("samp_min_reads"),
-                label = "Min reads",
-                value = 1000, min = 0, step = 100
-              ),
-              numericInput(
-                ns("samp_min_taxa"),
-                label = "Min observed taxa",
-                value = 10, min = 1, step = 1
-              ),
-              actionButton(
-                ns("apply_sample_filter"),
-                label = tagList(icon("check"), " Apply filter"),
-                class = "btn btn-success btn-sm w-100 mt-2"
-              ),
-              hr(),
-              tags$h6(class = "fw-bold", "Result"),
-              uiOutput(ns("sample_filter_summary"))
-            )
-          ),
-
-          card(
-            card_body(
-              tags$h6(class = "fw-bold mb-3", "Removed samples"),
-              DT::dataTableOutput(ns("removed_samples_table")),
-              hr(),
-              tags$h6(class = "fw-bold mb-3", "Retained samples"),
-              DT::dataTableOutput(ns("retained_samples_table"))
             )
           )
         )
@@ -511,73 +591,134 @@ mod_qc_server <- function(id, upload_data, parent_input) {
       )
     })
 
-    # ── 3. TAXA FILTERING — auto-reactive, Apply button re-runs ──────────
-    # Tracks the thresholds that were last applied
-    taxa_thresholds <- reactiveValues(prev = 0.10, abund = 10)
+    # ── FILTER STATE ──────────────────────────────────────────────────────
+    # Nothing is filtered until the user clicks Apply.
+    # NULL = no filter applied; otherwise the thresholds in use.
+    samp_applied <- reactiveVal(NULL)
+    taxa_applied <- reactiveVal(NULL)
 
-    taxa_result <- reactive({
-      req(ps_raw())
-      # Depend on Apply button OR initial data load
-      input$apply_taxa_filter
-      isolate({
-        tryCatch(
-          qc_filter_taxa(ps_raw(),
-                         min_prevalence = taxa_thresholds$prev,
-                         min_abundance  = taxa_thresholds$abund),
-          error = function(e) { message("[mod_qc] taxa filter: ", e$message); NULL }
+    # A new dataset starts with no filter
+    observeEvent(upload_data$ps, {
+      samp_applied(NULL)
+      taxa_applied(NULL)
+    }, ignoreNULL = FALSE)
+
+    # Thresholds in reads only make sense for raw counts
+    is_counts <- reactive({
+      identical(upload_data$features$data_type, "counts")
+    })
+
+    not_counts_note <- function(label) {
+      tags$p(class = "text-muted small",
+             tags$strong(label), tags$br(),
+             "Not used: the data are not raw counts.")
+    }
+
+    filter_status <- function(applied_txt, changed, n_txt) {
+      if (is.null(applied_txt)) {
+        tags$div(class = "alert alert-secondary p-2 small mt-2 mb-0",
+                 icon("circle-info"), " ",
+                 tags$strong("Not applied. "), n_txt)
+      } else {
+        tagList(
+          tags$div(class = "alert alert-success p-2 small mt-2 mb-0",
+                   icon("circle-check"), " ",
+                   tags$strong("Applied: "), paste0(applied_txt, ". ", n_txt)),
+          if (changed)
+            tags$div(class = "alert alert-warning p-2 small mt-2 mb-0",
+                     icon("triangle-exclamation"),
+                     " Values changed. Click Apply filter to use them.")
         )
-      })
+      }
+    }
+
+    # ── 3. SAMPLE FILTERING — live preview, used only after Apply ─────────
+    output$samp_min_reads_ui <- renderUI({
+      req(ps_raw())
+      if (is_counts()) {
+        numericInput(ns("samp_min_reads"), label = "Min reads",
+                     value = 1000, min = 0, step = 100)
+      } else {
+        not_counts_note("Min reads")
+      }
     })
 
-    observeEvent(input$apply_taxa_filter, {
-      taxa_thresholds$prev  <- input$taxa_prev
-      taxa_thresholds$abund <- input$taxa_abund
+    samp_values <- reactive({
+      reads <- if (is_counts()) input$samp_min_reads else 0
+      taxa  <- input$samp_min_taxa
+      req(!is.null(reads), !is.na(reads), !is.null(taxa), !is.na(taxa))
+      list(reads = reads, taxa = taxa)
     })
+    samp_values_d <- debounce(samp_values, 500)
 
-    output$taxa_filter_plot <- renderPlot({
-      req(taxa_result())
-      taxa_result()$plot
-    })
+    # Metadata rows for a set of samples, with the sample name as first column.
+    # The metadata may already have a column called "Sample".
+    sample_meta_table <- function(ps, ids) {
+      df <- data.frame(sample_data(ps), check.names = FALSE)[ids, , drop = FALSE]
+      cbind(data.frame(`Sample name` = rownames(df), check.names = FALSE),
+            df, row.names = NULL)
+    }
 
-    output$taxa_filter_summary <- renderUI({
-      req(taxa_result())
-      s <- taxa_result()$summary
-      tagList(
-        stat_badge("Taxa before", s$n_before),
-        stat_badge("Taxa after",  s$n_after, colour = "success"),
-        stat_badge("Removed",
-                   paste0(s$n_removed, " (", s$pct_removed, "%)"),
-                   colour = if (s$n_removed > 0) "warning" else "success")
+    run_sample_filter <- function(ps, th) {
+      tryCatch(
+        qc_filter_samples(ps, min_reads = th$reads, min_taxa = th$taxa),
+        error = function(e) { message("[mod_qc] sample filter: ", e$message); NULL }
       )
-    })
-
-    # ── 4. SAMPLE FILTERING — auto-reactive, Apply button re-runs ────────
-    samp_thresholds <- reactiveValues(reads = 1000, taxa = 10)
+    }
 
     sample_result <- reactive({
       req(ps_raw())
-      input$apply_sample_filter
-      isolate({
-        tryCatch(
-          qc_filter_samples(ps_raw(),
-                            min_reads = samp_thresholds$reads,
-                            min_taxa  = samp_thresholds$taxa),
-          error = function(e) { message("[mod_qc] sample filter: ", e$message); NULL }
-        )
-      })
+      run_sample_filter(ps_raw(), samp_values_d())
     })
 
     observeEvent(input$apply_sample_filter, {
-      samp_thresholds$reads <- input$samp_min_reads
-      samp_thresholds$taxa  <- input$samp_min_taxa
+      th  <- samp_values()
+      res <- run_sample_filter(ps_raw(), th)
+      if (is.null(res) || is.null(res$ps_filtered)) {
+        showNotification("These values would remove every sample. Filter not applied.",
+                         type = "error")
+        return()
+      }
+      samp_applied(th)
+    })
+
+    observeEvent(input$remove_sample_filter, {
+      samp_applied(NULL)
+    })
+
+    # Dataset after the applied sample filter (all samples if none applied)
+    ps_after_samples <- reactive({
+      req(ps_raw())
+      th <- samp_applied()
+      if (is.null(th)) return(ps_raw())
+      res <- run_sample_filter(ps_raw(), th)
+      if (is.null(res) || is.null(res$ps_filtered)) ps_raw() else res$ps_filtered
+    })
+
+    output$sample_filter_status <- renderUI({
+      req(ps_raw())
+      th <- samp_applied()
+      n_txt <- paste0(nsamples(ps_after_samples()), " of ", nsamples(ps_raw()),
+                      " samples are in use.")
+      if (is.null(th)) return(filter_status(NULL, FALSE, n_txt))
+      cur <- samp_values()
+      applied_txt <- paste0(
+        if (is_counts()) paste0("min reads ", format(th$reads, big.mark = ","), ", ") else "",
+        "min taxa ", th$taxa)
+      filter_status(applied_txt, !identical(cur, th), n_txt)
     })
 
     output$sample_filter_summary <- renderUI({
       req(sample_result())
-      n_removed <- length(sample_result()$removed_samples)
+      res <- sample_result()
+      if (is.null(res$ps_filtered))
+        return(tags$span(class = "text-danger small",
+                         icon("triangle-exclamation"),
+                         " These values would remove every sample."))
+      n_removed <- length(res$removed_samples)
       tagList(
         stat_badge("Samples before", nsamples(ps_raw())),
-        stat_badge("Samples after",  nsamples(sample_result()$ps_filtered),
+        stat_badge("Samples after",  nsamples(res$ps_filtered),
                    colour = "success"),
         stat_badge("Removed", n_removed,
                    colour = if (n_removed > 0) "warning" else "success")
@@ -590,32 +731,111 @@ mod_qc_server <- function(id, upload_data, parent_input) {
       if (length(removed) == 0)
         return(DT::datatable(data.frame(Message = "No samples removed"),
                              rownames = FALSE, options = list(dom = "t")))
-      data.frame(sample_data(ps_raw()))[removed, , drop = FALSE] %>%
-        tibble::rownames_to_column("Sample") %>%
+      sample_meta_table(ps_raw(), removed) %>%
         DT::datatable(options = list(pageLength = 10, dom = "tp"), rownames = FALSE)
     })
 
     output$retained_samples_table <- DT::renderDataTable({
       req(sample_result())
-      data.frame(sample_data(sample_result()$ps_filtered)) %>%
-        tibble::rownames_to_column("Sample") %>%
+      if (is.null(sample_result()$ps_filtered))
+        return(DT::datatable(data.frame(Message = "No samples kept"),
+                             rownames = FALSE, options = list(dom = "t")))
+      sample_meta_table(ps_raw(), sample_names(sample_result()$ps_filtered)) %>%
         DT::datatable(options = list(pageLength = 10, dom = "tp"), rownames = FALSE)
     })
 
-    # ── 5. FINAL DATASET — derived from both filter reactives ─────────────
-    ps_final <- reactive({
+    # ── 4. TAXA FILTERING — live preview, used only after Apply ───────────
+    # Runs on the samples kept by the applied sample filter.
+    output$taxa_abund_ui <- renderUI({
       req(ps_raw())
-      ps_f <- ps_raw()
-
-      if (!is.null(sample_result())) {
-        keep_samps <- sample_names(sample_result()$ps_filtered)
-        ps_f <- prune_samples(keep_samps, ps_f)
+      if (is_counts()) {
+        sliderInput(ns("taxa_abund"), label = "Min total abundance",
+                    min = 1, max = 100, value = 10, step = 1, ticks = FALSE)
+      } else {
+        not_counts_note("Min total abundance")
       }
+    })
 
-      if (!is.null(taxa_result())) {
-        keep_taxa <- intersect(taxa_names(taxa_result()$ps_filtered), taxa_names(ps_f))
-        if (length(keep_taxa) > 0)
-          ps_f <- prune_taxa(keep_taxa, ps_f)
+    taxa_values <- reactive({
+      prev  <- input$taxa_prev
+      abund <- if (is_counts()) input$taxa_abund else 0
+      req(!is.null(prev), !is.null(abund))
+      list(prev = prev, abund = abund)
+    })
+    taxa_values_d <- debounce(taxa_values, 500)
+
+    run_taxa_filter <- function(ps, th, plot_filter = TRUE) {
+      tryCatch(
+        qc_filter_taxa(ps,
+                       min_prevalence = th$prev,
+                       min_abundance  = th$abund,
+                       plot_filter    = plot_filter),
+        error = function(e) { message("[mod_qc] taxa filter: ", e$message); NULL }
+      )
+    }
+
+    taxa_result <- reactive({
+      req(ps_after_samples())
+      run_taxa_filter(ps_after_samples(), taxa_values_d())
+    })
+
+    observeEvent(input$apply_taxa_filter, {
+      th  <- taxa_values()
+      res <- run_taxa_filter(ps_after_samples(), th, plot_filter = FALSE)
+      if (is.null(res)) {
+        showNotification("These values would remove every taxon. Filter not applied.",
+                         type = "error")
+        return()
+      }
+      taxa_applied(th)
+    })
+
+    observeEvent(input$remove_taxa_filter, {
+      taxa_applied(NULL)
+    })
+
+    output$taxa_filter_plot <- renderPlot({
+      req(taxa_result())
+      taxa_result()$plot
+    })
+
+    output$taxa_filter_status <- renderUI({
+      req(ps_final())
+      th <- taxa_applied()
+      n_txt <- paste0(format(ntaxa(ps_final()), big.mark = ","), " of ",
+                      format(ntaxa(ps_raw()), big.mark = ","), " taxa are in use.")
+      if (is.null(th)) return(filter_status(NULL, FALSE, n_txt))
+      cur <- taxa_values()
+      applied_txt <- paste0(
+        "prevalence ", th$prev,
+        if (is_counts()) paste0(", abundance ", th$abund) else "")
+      filter_status(applied_txt, !identical(cur, th), n_txt)
+    })
+
+    output$taxa_filter_summary <- renderUI({
+      if (is.null(taxa_result()))
+        return(tags$span(class = "text-danger small",
+                         icon("triangle-exclamation"),
+                         " These values would remove every taxon."))
+      s <- taxa_result()$summary
+      tagList(
+        stat_badge("Taxa before", s$n_before),
+        stat_badge("Taxa after",  s$n_after, colour = "success"),
+        stat_badge("Removed",
+                   paste0(s$n_removed, " (", s$pct_removed, "%)"),
+                   colour = if (s$n_removed > 0) "warning" else "success")
+      )
+    })
+
+    # ── 5. FINAL DATASET — applied sample filter, then applied taxa filter ─
+    ps_final <- reactive({
+      req(ps_after_samples())
+      ps_f <- ps_after_samples()
+
+      th <- taxa_applied()
+      if (!is.null(th)) {
+        res <- run_taxa_filter(ps_f, th, plot_filter = FALSE)
+        if (!is.null(res)) ps_f <- res$ps_filtered
       }
 
       ps_f
@@ -623,34 +843,25 @@ mod_qc_server <- function(id, upload_data, parent_input) {
 
     output$qc_summary_table <- DT::renderDataTable({
       req(ps_final())
+      ps_s <- ps_after_samples()
       ps_f <- ps_final()
+      stage_row <- function(ps) {
+        c(Samples      = nsamples(ps),
+          Taxa         = format(ntaxa(ps), big.mark = ","),
+          Total_reads  = format(round(sum(sample_sums(ps))), big.mark = ","),
+          Median_reads = format(round(median(sample_sums(ps))), big.mark = ","))
+      }
       df <- data.frame(
-        Step = c("Raw data", "After sample filtering",
-                 "After taxa filtering", "Final dataset"),
-        Samples = c(
-          nsamples(ps_raw()),
-          if (!is.null(sample_result())) nsamples(sample_result()$ps_filtered) else NA,
-          NA,
-          nsamples(ps_f)
-        ),
-        Taxa = c(
-          ntaxa(ps_raw()),
-          NA,
-          if (!is.null(taxa_result())) taxa_result()$summary$n_after else NA,
-          ntaxa(ps_f)
-        ),
-        Total_reads = c(
-          format(sum(sample_sums(ps_raw())), big.mark = ","),
-          NA, NA,
-          format(sum(sample_sums(ps_f)), big.mark = ",")
-        ),
-        Median_reads = c(
-          format(round(median(sample_sums(ps_raw()))), big.mark = ","),
-          NA, NA,
-          format(round(median(sample_sums(ps_f))), big.mark = ",")
-        )
+        Step = c("Uploaded data",
+                 if (is.null(samp_applied())) "Sample filter: not applied"
+                 else "After sample filter",
+                 if (is.null(taxa_applied())) "Taxa filter: not applied"
+                 else "After taxa filter",
+                 "Final dataset (in use)"),
+        rbind(stage_row(ps_raw()), stage_row(ps_s), stage_row(ps_f), stage_row(ps_f)),
+        stringsAsFactors = FALSE
       )
-      DT::datatable(df, options = list(dom = "t"), rownames = FALSE) %>%
+      DT::datatable(df, options = list(dom = "t", ordering = FALSE), rownames = FALSE) %>%
         DT::formatStyle("Step", fontWeight = "bold")
     })
 
