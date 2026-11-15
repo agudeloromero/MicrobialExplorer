@@ -79,7 +79,7 @@ agglomerate_taxa <- function(ps,
   }
 
   # Agglomerate
-  ps_agg <- tax_glom(ps, taxrank = rank, NArm = FALSE)
+  ps_agg <- fast_tax_glom(ps, taxrank = rank, NArm = FALSE)
 
   # Rename taxa using the chosen rank label
   new_names <- as.character(tax_table(ps_agg)[, rank])
@@ -626,7 +626,7 @@ make_abundance_table <- function(ps,
   cat("=== Generating abundance summary table ===\n")
 
   ps_rel  <- transform_sample_counts(ps, function(x) x / sum(x))
-  ps_agg  <- tax_glom(ps_rel, taxrank = rank, NArm = FALSE)
+  ps_agg  <- fast_tax_glom(ps_rel, taxrank = rank, NArm = FALSE)
 
   ps_melt <- psmelt(ps_agg) %>%
     mutate(taxon = as.character(.data[[rank]])) %>%
@@ -715,7 +715,7 @@ plot_phylum_drilldown <- function(ps,
   cat("  Taxa in", phylum, ":", ntaxa(ps_phy), "\n")
 
   # Agglomerate to genus
-  ps_gen <- tax_glom(ps_phy, taxrank = "Genus", NArm = FALSE)
+  ps_gen <- fast_tax_glom(ps_phy, taxrank = "Genus", NArm = FALSE)
   genera <- as.character(tax_table(ps_gen)[, "Genus"])
   genera[is.na(genera)] <- "Unknown genus"
   taxa_names(ps_gen) <- make.unique(genera, sep = "_")
@@ -805,7 +805,7 @@ calculate_fb_ratio <- function(ps, group_var = NULL) {
   cat("=== Firmicutes:Bacteroidota ratio ===\n")
 
   ps_rel <- transform_sample_counts(ps, function(x) x / sum(x))
-  ps_phy <- tax_glom(ps_rel, taxrank = "Phylum", NArm = FALSE)
+  ps_phy <- fast_tax_glom(ps_rel, taxrank = "Phylum", NArm = FALSE)
   ps_melt <- psmelt(ps_phy) %>%
     filter(Phylum %in% c("Firmicutes", "Bacillota",    # both names used
                           "Bacteroidota", "Bacteroidetes")) %>%
@@ -878,8 +878,10 @@ identify_core_microbiome <- function(ps,
   cat("=== Core microbiome identification ===\n")
 
   ps_rel <- transform_sample_counts(ps, function(x) x / sum(x))
-  ps_gen <- tax_glom(ps_rel, taxrank = "Genus", NArm = FALSE)
-  taxa_names(ps_gen) <- make.unique(as.character(tax_table(ps_gen)[, "Genus"]), sep = "_")
+  ps_gen <- fast_tax_glom(ps_rel, taxrank = "Genus", NArm = FALSE)
+  gen_names <- as.character(tax_table(ps_gen)[, "Genus"])
+  gen_names[is.na(gen_names) | gen_names == "NA"] <- "Unknown_Genus"
+  taxa_names(ps_gen) <- make.unique(gen_names, sep = "_")
 
   compute_core <- function(ps_sub, label = "All") {
     otu_mat <- as.matrix(otu_table(ps_sub))
