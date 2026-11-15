@@ -249,10 +249,23 @@ plot_composition_bars <- function(ps,
       axis.line.y  = element_line(colour = "grey80")
     )
 
+  # Facet: one panel per level, each as wide as its number of samples.
+  # The same facet is used for the bars and for the group bar above them,
+  # so the two always line up.
+  has_facet   <- !is.null(facet_var) && facet_var %in% colnames(ps_melt)
+  facet_layer <- if (has_facet) {
+    facet_grid(cols     = vars(.data[[facet_var]]),
+               scales   = "free_x", space = "free_x",
+               labeller = label_wrap_gen(width = 12))
+  } else {
+    NULL
+  }
+  p <- p + facet_layer
+
   # Add group annotation bar if group_var provided
   if (!is.null(group_var) && group_var %in% colnames(ps_melt)) {
     group_df <- ps_melt %>%
-      select(Sample, all_of(group_var)) %>%
+      select(Sample, all_of(unique(c(group_var, if (has_facet) facet_var)))) %>%
       distinct()
 
     p_group <- ggplot(group_df, aes(x = Sample, y = 1,
@@ -260,19 +273,32 @@ plot_composition_bars <- function(ps,
       geom_col(width = 0.9) +
       scale_y_continuous(expand = c(0, 0)) +
       scale_fill_group(name = group_var) +
+      facet_layer +
       theme_void() +
       theme(
-        legend.position = "right",
-        axis.text.x     = element_blank()
+        legend.position  = "right",
+        axis.text.x      = element_blank(),
+        strip.background = element_rect(fill = "#2c3e50", colour = NA),
+        strip.text       = element_text(colour = "white", face = "bold",
+                                        size = 9,
+                                        margin = ggplot2::margin(3, 2, 3, 2))
       )
 
-    p <- p_group / p +
-      plot_layout(heights = c(0.08, 1), guides = "collect")
-  }
+    # Title and facet labels go at the very top, above the group bar
+    p <- p +
+      labs(title = NULL, subtitle = NULL) +
+      theme(strip.background = element_blank(), strip.text = element_blank())
 
-  # Facet
-  if (!is.null(facet_var) && facet_var %in% colnames(ps_melt)) {
-    p <- p + facet_wrap(~ .data[[facet_var]], scales = "free_x", nrow = 1)
+    p <- p_group / p +
+      plot_layout(heights = c(if (has_facet) 0.14 else 0.08, 1), guides = "collect") +
+      plot_annotation(
+        title    = paste0("Taxonomic composition — ", rank, " level"),
+        subtitle = paste0(nsamples(ps), " samples"),
+        theme    = theme(
+          plot.title    = element_text(face = "bold", size = 13),
+          plot.subtitle = element_text(colour = "grey40", size = 10)
+        )
+      )
   }
 
   if (!show_legend) p <- p + theme(legend.position = "none")
