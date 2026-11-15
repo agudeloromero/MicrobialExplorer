@@ -659,7 +659,7 @@ plot_abundance_heatmap <- function(ps,
   plots <- c(plots, list(p))
 
   heights <- c(if (!is.null(p_col_dendro)) 0.15,
-               if (!is.null(p_annot)) (if (block) 0.10 else 0.05),
+               if (!is.null(p_annot)) 0.05,
                1)
 
   col_label <- if (block) {
