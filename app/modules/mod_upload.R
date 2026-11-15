@@ -11,98 +11,111 @@
 # Returns reactive values: ps, features, cache
 # =============================================================================
 
-# ── UI: sidebar upload panel ──────────────────────────────────────────────────
+# ── UI: data input panel (shown on the Home page) ────────────────────────────
 mod_upload_ui <- function(id) {
   ns <- NS(id)
 
-  tagList(
-    tags$h6(
-      class = "fw-bold mb-2 text-muted text-uppercase small",
-      icon("upload"), " Data input"
-    ),
+  card(
+    card_header(icon("upload"), " Data input"),
+    card_body(
+      layout_columns(
+        col_widths = c(4, 8),
 
-    # ── Option 1: demo dataset ──────────────────────────────────────────────
-    tags$p(class = "fw-bold small mb-1", "Option 1 — Demo dataset"),
+        # ── Option 1: demo dataset ──────────────────────────────────────────
+        tags$div(
+          tags$p(class = "fw-bold small mb-1", "Option 1 — Demo dataset"),
 
-    # Demo dataset options — simple dropdown, no bsplus needed
-    selectInput(
-      ns("demo_choice"),
-      label = NULL,
-      choices = c(
-        "GlobalPatterns (body sites, n=26)" = "GlobalPatterns",
-        "Enterotype (gut microbiome, n=280)" = "enterotype",
-        "Soilrep (soil warming, n=56)"       = "soilrep",
-        "Network enriched (IBD/Healthy, n=60)" = "network_enriched"
+          selectInput(
+            ns("demo_choice"),
+            label = NULL,
+            choices = c(
+              "GlobalPatterns (body sites, n=26)" = "GlobalPatterns",
+              "Enterotype (gut microbiome, n=280)" = "enterotype",
+              "Soilrep (soil warming, n=56)"       = "soilrep",
+              "Network enriched (IBD/Healthy, n=60)" = "network_enriched"
+            ),
+            selected = "network_enriched",
+            width = "100%"
+          ),
+
+          actionButton(
+            ns("load_demo"),
+            label = tagList(icon("flask"), " Load demo data"),
+            class = "btn btn-outline-secondary btn-sm w-100 mb-2"
+          )
+        ),
+
+        # ── Option 2: user files ────────────────────────────────────────────
+        tags$div(
+          class = "me-own-files",
+          tags$p(class = "fw-bold small mb-1", "Option 2 — Your own files"),
+
+          layout_columns(
+            col_widths = c(6, 6, 6, 6),
+
+            # ── OTU / ASV table ──────────────────────────────────────────────
+            fileInput(
+              ns("otu_file"),
+              label       = tooltip(
+                tags$span("OTU / ASV table ", tags$span(class = "text-danger", "*"),
+                          icon("circle-question", class = "small")),
+                "Required. Rows = taxa, columns = samples. CSV or TSV with row names."
+              ),
+              accept      = ACCEPTED_OTU,
+              placeholder = "taxa × samples (.csv/.tsv)",
+              width       = "100%"
+            ),
+
+            # ── Taxonomy table ───────────────────────────────────────────────
+            fileInput(
+              ns("tax_file"),
+              label  = tooltip(
+                tags$span("Taxonomy table ", icon("circle-question", class = "small")),
+                "Optional. Rows = taxa (must match OTU table), columns = ranks (Kingdom … Species)."
+              ),
+              accept = ACCEPTED_TAX,
+              placeholder = "taxa × ranks (.csv/.tsv)",
+              width       = "100%"
+            ),
+
+            # ── Sample metadata ──────────────────────────────────────────────
+            fileInput(
+              ns("meta_file"),
+              label  = tooltip(
+                tags$span("Sample metadata ", icon("circle-question", class = "small")),
+                "Optional. Rows = samples (must match OTU table columns), columns = variables."
+              ),
+              accept = ACCEPTED_META,
+              placeholder = "samples × variables (.csv/.tsv)",
+              width       = "100%"
+            ),
+
+            # ── Phylogenetic tree ────────────────────────────────────────────
+            fileInput(
+              ns("tree_file"),
+              label  = tooltip(
+                tags$span("Phylogenetic tree ", icon("circle-question", class = "small")),
+                "Optional. Newick or Nexus format. Enables Faith's PD in alpha diversity."
+              ),
+              accept = ACCEPTED_TREE,
+              placeholder = "Newick / Nexus",
+              width       = "100%"
+            )
+          ),
+
+          # ── Build / import button ──────────────────────────────────────────
+          actionButton(
+            ns("build_ps"),
+            label = tagList(icon("play"), " Import data"),
+            class = "btn btn-primary btn-sm w-100 mt-1",
+            disabled = "disabled"
+          )
+        )
       ),
-      selected = "network_enriched"
-    ),
 
-    actionButton(
-      ns("load_demo"),
-      label = tagList(icon("flask"), " Load demo data"),
-      class = "btn btn-outline-secondary btn-sm w-100 mb-2"
-    ),
-
-    hr(),
-
-    # ── Option 2: user files ────────────────────────────────────────────────
-    tags$p(class = "fw-bold small mb-1", "Option 2 — Your own files"),
-
-    # ── OTU / ASV table ────────────────────────────────────────────────────
-    fileInput(
-      ns("otu_file"),
-      label       = tooltip(
-        tags$span("OTU / ASV table ", tags$span(class = "text-danger", "*"),
-                  icon("circle-question", class = "small")),
-        "Required. Rows = taxa, columns = samples. CSV or TSV with row names."
-      ),
-      accept      = ACCEPTED_OTU,
-      placeholder = "taxa × samples (.csv/.tsv)"
-    ),
-
-    # ── Taxonomy table ─────────────────────────────────────────────────────
-    fileInput(
-      ns("tax_file"),
-      label  = tooltip(
-        tags$span("Taxonomy table ", icon("circle-question", class = "small")),
-        "Optional. Rows = taxa (must match OTU table), columns = ranks (Kingdom … Species)."
-      ),
-      accept = ACCEPTED_TAX,
-      placeholder = "taxa × ranks (.csv/.tsv)"
-    ),
-
-    # ── Sample metadata ────────────────────────────────────────────────────
-    fileInput(
-      ns("meta_file"),
-      label  = tooltip(
-        tags$span("Sample metadata ", icon("circle-question", class = "small")),
-        "Optional. Rows = samples (must match OTU table columns), columns = variables."
-      ),
-      accept = ACCEPTED_META,
-      placeholder = "samples × variables (.csv/.tsv)"
-    ),
-
-    # ── Phylogenetic tree ──────────────────────────────────────────────────
-    fileInput(
-      ns("tree_file"),
-      label  = tooltip(
-        tags$span("Phylogenetic tree ", icon("circle-question", class = "small")),
-        "Optional. Newick or Nexus format. Enables Faith's PD in alpha diversity."
-      ),
-      accept = ACCEPTED_TREE,
-      placeholder = "Newick / Nexus"
-    ),
-
-    # ── Build / import button ──────────────────────────────────────────────
-    actionButton(
-      ns("build_ps"),
-      label = tagList(icon("play"), " Import data"),
-      class = "btn btn-primary btn-sm w-100 mt-1",
-      disabled = "disabled"
-    ),
-
-    # ── Validation feedback ────────────────────────────────────────────────
-    uiOutput(ns("validation_output"))
+      # ── Validation feedback ──────────────────────────────────────────────
+      uiOutput(ns("validation_output"))
+    )
   )
 }
 
@@ -114,6 +127,9 @@ mod_upload_landing_ui <- function(id) {
   tagList(
     # Status card — shown after data is loaded
     uiOutput(ns("landing_status")),
+
+    # Data input: demo dataset or own files
+    mod_upload_ui(id),
 
     layout_columns(
       col_widths = c(8, 4),
@@ -148,7 +164,7 @@ mod_upload_landing_ui <- function(id) {
           hr(),
           tags$p(
             class = "small text-muted",
-            icon("circle-info"), " Upload your files using the panel on the left, ",
+            icon("circle-info"), " Upload your files using the Data input panel above, ",
             "or click ", tags$strong("Load demo data"), " to explore with an example dataset."
           )
         )
@@ -162,8 +178,8 @@ mod_upload_landing_ui <- function(id) {
             tags$li("Upload your OTU table (required)"),
             tags$li("Optionally add taxonomy, metadata, and tree"),
             tags$li('Click "Import data"'),
-            tags$li("Select a group variable and rank"),
-            tags$li("Navigate to any analysis tab")
+            tags$li("Select the group variable in the bar under the title"),
+            tags$li("Open any analysis from the menu on the left")
           ),
           hr(),
           tags$h6("File formats"),
@@ -513,7 +529,7 @@ mod_upload_landing_ui <- function(id) {
           ),
           tags$p(
             class = "text-muted small mt-2 mb-0",
-            "Navigate using the tabs above to begin your analysis."
+            "Use the menu on the left to begin your analysis."
           )
         )
       )

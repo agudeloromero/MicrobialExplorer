@@ -70,7 +70,7 @@ mod_composition_ui <- function(id) {
                           "Each colour is one taxon, and its height is the share of that ",
                           "sample's reads belonging to it. Every bar adds up to 100%."),
                   tags$li(tags$strong("The coloured bar on top "),
-                          "shows the group of each sample (the group variable in the sidebar)."),
+                          "shows the group of each sample (the group variable in the bar at the top)."),
                   tags$li(tags$strong("Other (grey): "),
                           "all the taxa outside the top N, added together."),
                   tags$li(tags$strong("Unknown: "),
@@ -173,7 +173,7 @@ mod_composition_ui <- function(id) {
                   tags$li(tags$strong("The question: "),
                           "on average, how abundant is each taxon in each group?"),
                   tags$li(tags$strong("Each cluster of bars is one group "),
-                          "(the group variable in the sidebar). The number of samples in the ",
+                          "(the group variable in the bar at the top). The number of samples in the ",
                           "group is shown under its name."),
                   tags$li(tags$strong("Each bar is one taxon. "),
                           "Its height is the mean share of reads from that taxon across the ",
@@ -390,7 +390,7 @@ mod_composition_ui <- function(id) {
             uiOutput(ns("fb_pair_ui")),
             tags$p(class = "text-muted small",
                    "Non-parametric tests only. Groups come from the group ",
-                   "variable in the sidebar."),
+                   "variable in the bar at the top."),
             actionButton(ns("fb_show_sig"),
                          label = tagList(icon("star"), " Show all significant"),
                          class = "btn btn-outline-primary btn-sm w-100 mb-2"),
@@ -592,7 +592,7 @@ mod_composition_server <- function(id, upload_data, ps_qc, parent_input) {
     output$bars_facet_ui <- renderUI({
       feat <- upload_data$features
       req(feat)
-      # Use group_vars (same source as sidebar group variable selector)
+      # Use group_vars (same source as the group variable selector)
       # fall back to all sample_vars if needed
       facet_choices <- if (length(feat$group_vars) > 0) feat$group_vars
                        else if (length(feat$cat_vars) > 0) feat$cat_vars
@@ -662,11 +662,9 @@ mod_composition_server <- function(id, upload_data, ps_qc, parent_input) {
     })
 
     # Helper: resolve rank
-    # each sub-tab has its own rank selector and falls back to the sidebar
+    # each sub-tab has its own rank selector
     resolve_rank <- function(local_val = NULL) {
       if (!is.null(local_val) && nzchar(local_val)) return(local_val)
-      grank <- parent_input$tax_rank
-      if (!is.null(grank) && nzchar(grank)) return(grank)
       feat <- upload_data$features
       if (!is.null(feat) && length(feat$avail_ranks) > 0) {
         preferred <- intersect(c("Genus", "Family", "Order", "Phylum"), feat$avail_ranks)
@@ -754,7 +752,7 @@ mod_composition_server <- function(id, upload_data, ps_qc, parent_input) {
         tags$div(
           class = "alert alert-warning p-2 small",
           icon("triangle-exclamation"),
-          " Select a group variable in the sidebar to enable this plot."
+          " Select a group variable in the bar at the top to enable this plot."
         )
       }
     })
@@ -859,7 +857,7 @@ mod_composition_server <- function(id, upload_data, ps_qc, parent_input) {
       if (is.null(res$pairwise)) {
         return(tags$p(class = "text-muted small",
                       "Choose a group variable with at least two groups in the ",
-                      "sidebar to compare groups."))
+                      "bar at the top to compare groups."))
       }
       ov <- res$overall
       tagList(
