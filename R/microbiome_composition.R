@@ -434,10 +434,19 @@ plot_mean_composition <- function(ps,
 #' @param ps          A phyloseq object.
 #' @param rank        Taxonomic rank.
 #' @param top_n       Number of top taxa to include.
-#' @param group_var   Optional metadata variable for column annotation.
+#' @param group_var   Optional metadata variable for the group colour bar
+#'   and, with block_by_group, for the blocks.
 #' @param transform   Transformation to apply: "clr", "log10", or "relative".
 #' @param cluster_samples Whether to cluster samples. Default = TRUE.
-#' @return A ggplot heatmap.
+#'   Without blocks all samples are clustered together and a column
+#'   dendrogram is drawn; with blocks, samples are clustered inside each block.
+#' @param cluster_rows Whether to cluster taxa. Default = TRUE.
+#' @param block_by_group Keep the samples of each group together, one panel
+#'   per group. Default = TRUE when group_var is given.
+#' @param scale_rows  Scale each taxon to a z-score across samples.
+#'   Default = FALSE.
+#' @return A patchwork object (heatmap with optional dendrograms and
+#'   group colour bar). Clustering uses Euclidean distance and complete linkage.
 
 plot_abundance_heatmap <- function(ps,
                                     rank            = "Genus",
@@ -445,7 +454,9 @@ plot_abundance_heatmap <- function(ps,
                                     group_var       = NULL,
                                     transform       = "clr",
                                     cluster_samples = TRUE,
-                                    cluster_rows    = TRUE) {
+                                    cluster_rows    = TRUE,
+                                    block_by_group  = !is.null(group_var),
+                                    scale_rows      = FALSE) {
 
   cat("=== Abundance heatmap ===\n")
 
@@ -453,75 +464,66 @@ plot_abundance_heatmap <- function(ps,
   ps_agg  <- agglomerate_taxa(ps, rank = rank, transform = transform,
                                top_n = top_n)
 
-  otu_mat <- as.matrix(otu_table(ps_agg))
+  otu_mat <- as(otu_table(ps_agg), "matrix")
   if (!taxa_are_rows(ps_agg)) otu_mat <- t(otu_mat)
 
   # Remove "Other" from heatmap
-  otu_mat <- otu_mat[rownames(otu_mat) != "Other", ]
+  otu_mat <- otu_mat[rownames(otu_mat) != "Other", , drop = FALSE]
 
-  # Row (taxa) clustering
-  # When a group variable is selected, cluster on group-mean profiles so
-  # the dendrogram reflects which taxa differ most between groups
+  # Optional: scale each taxon (row z-score) so that colours show how a
+  # sample compares with the other samples for that taxon
+  if (scale_rows) {
+    otu_mat <- t(scale(t(otu_mat)))
+    otu_mat[is.na(otu_mat)] <- 0   # taxa with no variation
+  }
+
+  # Group of each sample (for the colour bar and the blocks)
+  meta_df   <- data.frame(sample_data(ps_agg), check.names = FALSE)
+  has_group <- !is.null(group_var) && group_var %in% colnames(meta_df)
+  block     <- isTRUE(block_by_group) && has_group
+
+  groups     <- NULL
+  grp_levels <- NULL
+  if (has_group) {
+    grp_col    <- meta_df[colnames(otu_mat), group_var]
+    grp_levels <- if (is.factor(grp_col)) levels(droplevels(grp_col))
+                  else sort(unique(as.character(grp_col)))
+    groups     <- as.character(grp_col)
+    if (anyNA(groups)) {
+      groups[is.na(groups)] <- "NA"
+      grp_levels <- c(grp_levels, "NA")
+    }
+  }
+
+  # Row (taxa) clustering: Euclidean distance, complete linkage
   row_hclust <- NULL
   if (cluster_rows && nrow(otu_mat) > 2) {
-    if (!is.null(group_var)) {
-      meta_df <- data.frame(sample_data(ps_agg))
-      if (group_var %in% colnames(meta_df)) {
-        groups     <- as.character(meta_df[[group_var]])
-        # Build group-mean matrix (taxa x groups)
-        grp_levels <- unique(groups)
-        mean_mat   <- sapply(grp_levels, function(g) {
-          idx <- which(groups == g)
-          if (length(idx) == 1) otu_mat[, idx]
-          else rowMeans(otu_mat[, idx, drop = FALSE])
-        })
-        row_hclust <- hclust(dist(mean_mat))
-      } else {
-        row_hclust <- hclust(dist(otu_mat))
-      }
-    } else {
-      row_hclust <- hclust(dist(otu_mat))
-    }
-    otu_mat <- otu_mat[row_hclust$order, ]
+    row_hclust <- hclust(dist(otu_mat))
+    otu_mat    <- otu_mat[row_hclust$order, , drop = FALSE]
   }
 
   # Column (sample) ordering
-  if (cluster_samples && !is.null(group_var) && ncol(otu_mat) > 2) {
-    # Cluster within each group separately, then concatenate groups
-    meta_df <- data.frame(sample_data(ps_agg))
-    if (group_var %in% colnames(meta_df)) {
-      groups      <- unique(as.character(meta_df[[group_var]]))
-      col_order   <- unlist(lapply(groups, function(g) {
-        samps <- rownames(meta_df)[meta_df[[group_var]] == g]
-        samps <- intersect(samps, colnames(otu_mat))
-        if (length(samps) <= 2) return(samps)
-        sub_mat   <- otu_mat[, samps, drop = FALSE]
-        samps[hclust(dist(t(sub_mat)))$order]
-      }))
-      otu_mat <- otu_mat[, col_order, drop = FALSE]
-    } else {
-      # Fall back to global clustering if group_var not in metadata
-      col_order <- hclust(dist(t(otu_mat)))$order
-      otu_mat   <- otu_mat[, col_order]
-    }
-  } else if (cluster_samples && is.null(group_var) && ncol(otu_mat) > 2) {
-    # Global hierarchical clustering — no group sorting, shows column dendrogram
-    col_order <- hclust(dist(t(otu_mat)))$order
-    otu_mat   <- otu_mat[, col_order, drop = FALSE]
-  } else if (!cluster_samples && ncol(otu_mat) > 2) {
-    # No clustering: sort samples by group variable if available
-    if (!is.null(group_var)) {
-      meta_df <- data.frame(sample_data(ps_agg))
-      if (group_var %in% colnames(meta_df)) {
-        col_order <- rownames(meta_df)[order(as.character(meta_df[[group_var]]))]
-        col_order <- intersect(col_order, colnames(otu_mat))
-        otu_mat   <- otu_mat[, col_order, drop = FALSE]
-      }
-    }
+  #   block           : samples stay inside their group; clustered within it
+  #   cluster_samples : all samples clustered together (column dendrogram)
+  #   neither         : order of the input data
+  col_hclust <- NULL
+  if (block) {
+    col_order <- unlist(lapply(grp_levels, function(g) {
+      samps <- colnames(otu_mat)[groups == g]
+      if (!cluster_samples || length(samps) <= 2) return(samps)
+      samps[hclust(dist(t(otu_mat[, samps, drop = FALSE])))$order]
+    }))
+    groups  <- groups[match(col_order, colnames(otu_mat))]
+    otu_mat <- otu_mat[, col_order, drop = FALSE]
+  } else if (cluster_samples && ncol(otu_mat) > 2) {
+    col_hclust <- hclust(dist(t(otu_mat)))
+    if (has_group) groups <- groups[col_hclust$order]
+    otu_mat    <- otu_mat[, col_hclust$order, drop = FALSE]
   }
 
-  # Store final column order BEFORE melting — used for both plot and annotation
   sample_levels <- colnames(otu_mat)
+  n_taxa        <- nrow(otu_mat)
+  n_samp        <- ncol(otu_mat)
 
   # Melt to long format
   heat_df <- as.data.frame(otu_mat) %>%
@@ -532,16 +534,25 @@ plot_abundance_heatmap <- function(ps,
       sample = factor(sample, levels = sample_levels)
     )
 
-  # Add group annotation
-  if (!is.null(group_var) && group_var %in% sample_variables(ps)) {
-    group_df <- data.frame(sample_data(ps)) %>%
-      select(all_of(group_var)) %>%
-      rownames_to_column("sample")
-    heat_df <- left_join(heat_df, group_df, by = "sample")
+  if (has_group) {
+    grp_of <- setNames(groups, sample_levels)
+    heat_df$grp_fill <- factor(grp_of[as.character(heat_df$sample)],
+                               levels = grp_levels)
   }
 
-  # Colour scale midpoint
-  midpoint <- median(heat_df$value)
+  # One panel per group, each as wide as its number of samples
+  facet_layer <- if (block) {
+    facet_grid(cols     = vars(grp_fill),
+               scales   = "free_x", space = "free_x",
+               labeller = label_wrap_gen(width = 12))
+  } else {
+    NULL
+  }
+
+  value_name <- if (scale_rows) "Z-score"
+                else ifelse(transform == "clr", "CLR",
+                            ifelse(transform == "log10", "Log10", "Rel. abund."))
+  midpoint   <- if (scale_rows) 0 else median(heat_df$value)
 
   p <- ggplot(heat_df, aes(x = sample, y = taxon, fill = value)) +
     geom_tile(colour = "white", linewidth = 0.15) +
@@ -550,79 +561,59 @@ plot_abundance_heatmap <- function(ps,
       mid      = "white",
       high     = "#e74c3c",
       midpoint = midpoint,
-      name     = ifelse(transform == "clr", "CLR",
-                        ifelse(transform == "log10", "Log10", "Rel. abund."))
+      name     = value_name
     ) +
-    scale_x_discrete(limits = sample_levels, expand = c(0, 0)) +
+    scale_x_discrete(expand = c(0, 0)) +
     scale_y_discrete(expand = c(0, 0)) +
-    labs(
-      title    = paste0(rank, "-level abundance heatmap"),
-      subtitle = paste0("Top ", nrow(otu_mat), " taxa | Transform: ", transform),
-      x        = "Samples",
-      y        = rank
-    ) +
+    facet_layer +
+    labs(x = "Samples", y = rank) +
     theme_microbiome() +
     theme(
-      axis.text.x  = element_text(angle = 45, hjust = 1, size = 7),
-      axis.text.y  = element_text(size = 8, face = "italic"),
-      panel.border = element_rect(colour = "grey80", fill = NA)
+      axis.text.x      = if (n_samp <= 60) element_text(angle = 45, hjust = 1, size = 7)
+                         else element_blank(),
+      axis.ticks.x     = if (n_samp <= 60) element_line() else element_blank(),
+      axis.text.y      = element_text(size = 8, face = "italic"),
+      panel.border     = element_rect(colour = "grey80", fill = NA),
+      panel.spacing.x  = unit(4, "pt"),
+      strip.background = element_blank(),
+      strip.text       = element_blank()
     )
 
-  # ── Collect optional components before assembly ──────────────────────────
-  has_annot  <- !is.null(group_var) && group_var %in% colnames(heat_df)
-  has_dendro <- !is.null(row_hclust) && requireNamespace("ggdendro", quietly = TRUE)
+  has_dendro_pkg <- requireNamespace("ggdendro", quietly = TRUE)
 
-  # Build annotation strip
+  # Group colour bar (carries the block labels when blocking)
   p_annot <- NULL
-  if (has_annot) {
-    annot_df <- data.frame(sample_data(ps_agg)) %>%
-      rownames_to_column("sample") %>%
-      select(sample, all_of(group_var)) %>%
-      filter(sample %in% sample_levels) %>%
-      mutate(
-        sample   = factor(sample, levels = sample_levels),
-        annot_y  = "group",
-        grp_fill = factor(as.character(.data[[group_var]]))
-      )
+  if (has_group) {
+    annot_df <- data.frame(
+      sample   = factor(sample_levels, levels = sample_levels),
+      grp_fill = factor(groups, levels = grp_levels)
+    )
 
-    n_groups <- nlevels(annot_df$grp_fill)
-    pal_20   <- c("#e41a1c","#377eb8","#4daf4a","#984ea3","#ff7f00",
-                  "#a65628","#f781bf","#999999","#66c2a5","#fc8d62",
-                  "#8da0cb","#e78ac3","#a6d854","#ffd92f","#e5c494",
-                  "#1b9e77","#d95f02","#7570b3","#e7298a","#66a61e")
-
-    grp_cols <- if (n_groups <= 8) {
-      scale_fill_group(name = group_var)
-    } else if (n_groups <= 20) {
-      scale_fill_manual(
-        values = setNames(pal_20[seq_len(n_groups)], levels(annot_df$grp_fill)),
-        name   = group_var)
-    } else {
-      scale_fill_viridis_d(name = group_var)
-    }
-
-    p_annot <- ggplot(annot_df,
-                      aes(x = sample, y = annot_y, fill = grp_fill)) +
+    p_annot <- ggplot(annot_df, aes(x = sample, y = 1, fill = grp_fill)) +
       geom_tile() +
-      grp_cols +
-      scale_x_discrete(limits = sample_levels, expand = c(0, 0)) +
-      scale_y_discrete(expand = c(0, 0)) +
-      labs(fill = group_var) +
+      scale_fill_group(name = group_var) +
+      scale_x_discrete(expand = c(0, 0)) +
+      scale_y_continuous(expand = c(0, 0)) +
+      facet_layer +
       theme_void() +
-      theme(legend.position  = "right",
-            plot.margin      = ggplot2::margin(0, 0, 0, 0))
+      theme(
+        legend.position  = "right",
+        plot.margin      = ggplot2::margin(0, 0, 0, 0),
+        panel.spacing.x  = unit(4, "pt"),
+        strip.background = element_rect(fill = "#2c3e50", colour = NA),
+        strip.text       = element_text(colour = "white", face = "bold", size = 8,
+                                        margin = ggplot2::margin(3, 2, 3, 2))
+      )
   }
 
-  # Build row dendrogram
+  # Row dendrogram (left). Leaf i of the dendrogram is row i of the heatmap.
   p_dendro <- NULL
-  if (has_dendro) {
+  if (!is.null(row_hclust) && has_dendro_pkg) {
     dendro_data <- ggdendro::dendro_data(as.dendrogram(row_hclust),
                                          type = "rectangle")
-    n_taxa <- nrow(otu_mat)
 
     p_dendro <- ggplot(ggdendro::segment(dendro_data)) +
-      geom_segment(aes(x = y, y = n_taxa + 1 - x,
-                       xend = yend, yend = n_taxa + 1 - xend),
+      geom_segment(aes(x = y, y = x, xend = yend, yend = xend),
                    linewidth = 0.4, colour = "#2c3e50") +
       scale_x_reverse(expand = c(0.02, 0)) +
       scale_y_continuous(limits = c(0.5, n_taxa + 0.5), expand = c(0, 0)) +
@@ -639,13 +630,11 @@ plot_abundance_heatmap <- function(ps,
         axis.title.y = element_blank()
       )
   }
-  # Build column dendrogram (when cluster_samples=TRUE, group_var=NULL)
+
+  # Column dendrogram (top), only when all samples are clustered together
   p_col_dendro <- NULL
-  if (cluster_samples && is.null(group_var) &&
-      requireNamespace("ggdendro", quietly = TRUE) && ncol(otu_mat) > 2) {
-    col_hclust   <- hclust(dist(t(otu_mat)))
+  if (!is.null(col_hclust) && has_dendro_pkg) {
     col_dd       <- ggdendro::dendro_data(as.dendrogram(col_hclust), type = "rectangle")
-    n_samp       <- ncol(otu_mat)
     p_col_dendro <- ggplot(ggdendro::segment(col_dd)) +
       geom_segment(aes(x = x, y = y, xend = xend, yend = yend),
                    linewidth = 0.4, colour = "#2c3e50") +
@@ -656,36 +645,49 @@ plot_abundance_heatmap <- function(ps,
   }
 
   # ── Assemble final layout ─────────────────────────────────────────────────
-  has_col_dendro <- !is.null(p_col_dendro)
-  if (has_dendro && has_annot) {
-    p <- (patchwork::plot_spacer() + p_annot + p_dendro + p) +
-      patchwork::plot_layout(
-        design  = "AB
-CD",
-        widths  = c(0.15, 1),
-        heights = c(0.05, 1),
-        guides  = "collect"
-      )
-  } else if (has_col_dendro && has_dendro) {
-    p <- (patchwork::plot_spacer() + p_col_dendro + p_dendro + p) +
-      patchwork::plot_layout(
-        design  = "AB
-CD",
-        widths  = c(0.15, 1),
-        heights = c(0.15, 1),
-        guides  = "collect"
-      )
-  } else if (has_col_dendro) {
-    p <- (p_col_dendro / p) +
-      patchwork::plot_layout(heights = c(0.15, 1), guides = "collect")
-  } else if (has_dendro) {
-    p <- (p_dendro | p) +
-      patchwork::plot_layout(widths = c(0.15, 1), guides = "collect")
-  } else if (has_annot) {
-    p <- (p_annot / p) +
-      patchwork::plot_layout(heights = c(0.05, 1), guides = "collect")
+  #   [spacer] column dendrogram
+  #   [spacer] group colour bar
+  #   row dendrogram | heatmap
+  has_left <- !is.null(p_dendro)
+  tops     <- Filter(Negate(is.null), list(p_col_dendro, p_annot))
+  plots    <- list()
+  for (tp in tops) {
+    if (has_left) plots <- c(plots, list(patchwork::plot_spacer()))
+    plots <- c(plots, list(tp))
   }
-  return(p)
+  if (has_left) plots <- c(plots, list(p_dendro))
+  plots <- c(plots, list(p))
+
+  heights <- c(if (!is.null(p_col_dendro)) 0.15,
+               if (!is.null(p_annot)) (if (block) 0.10 else 0.05),
+               1)
+
+  col_label <- if (block) {
+    paste0("blocked by ", group_var,
+           if (cluster_samples) ", clustered within each block" else "")
+  } else if (!is.null(col_hclust)) {
+    "all clustered together"
+  } else {
+    "in the order of the data"
+  }
+
+  out <- patchwork::wrap_plots(plots,
+                               ncol    = if (has_left) 2 else 1,
+                               widths  = if (has_left) c(0.15, 1) else 1,
+                               heights = heights,
+                               guides  = "collect") +
+    patchwork::plot_annotation(
+      title    = paste0(rank, "-level abundance heatmap"),
+      subtitle = paste0("Top ", n_taxa, " taxa | Values: ", value_name,
+                        if (scale_rows) paste0(" of ", transform) else "",
+                        " | Samples: ", col_label),
+      theme    = theme(
+        plot.title    = element_text(face = "bold", size = 13),
+        plot.subtitle = element_text(colour = "grey40", size = 10)
+      )
+    )
+
+  return(out)
 }
 
 
