@@ -225,3 +225,59 @@ meta_df_safe <- function(ps) {
   df <- data.frame(sample_data(ps))
   return(df)
 }
+
+
+#' Fast taxonomic agglomeration (replacement for phyloseq::tax_glom).
+#'
+#' Sums counts of taxa that share the same taxonomy down to `taxrank`.
+#' Gives the same totals as phyloseq::tax_glom() but uses rowsum(), which is
+#' much faster on datasets with thousands of taxa.
+#'
+#' @param ps       A phyloseq object with a taxonomy table.
+#' @param taxrank  Rank to agglomerate to (must be in rank_names(ps)).
+#' @param NArm     Remove taxa with no assignment at `taxrank`. Default = FALSE.
+#' @return A phyloseq object with one taxon per group. Each group is named
+#'   after its most abundant member; ranks below `taxrank` are set to NA.
+fast_tax_glom <- function(ps, taxrank, NArm = FALSE) {
+
+  tax  <- as(tax_table(ps), "matrix")
+  ridx <- match(taxrank, colnames(tax))
+  if (is.na(ridx)) stop("taxrank must be one of: ", paste(colnames(tax), collapse = ", "))
+
+  rows <- taxa_are_rows(ps)
+  otu  <- as(otu_table(ps), "matrix")
+  if (!rows) otu <- t(otu)
+  otu <- otu[rownames(tax), , drop = FALSE]
+
+  if (NArm) {
+    keep <- !is.na(tax[, ridx]) & !tax[, ridx] %in% c("", " ", "\t")
+    tax  <- tax[keep, , drop = FALSE]
+    otu  <- otu[keep, , drop = FALSE]
+  }
+
+  # Group = identical taxonomy from the first rank down to taxrank
+  key <- do.call(paste, c(as.data.frame(tax[, seq_len(ridx), drop = FALSE],
+                                        stringsAsFactors = FALSE), sep = ";"))
+  grp <- match(key, unique(key))
+
+  otu_sum <- rowsum(otu, grp, reorder = FALSE)
+
+  # Representative taxon of each group = its most abundant member
+  ord   <- order(grp, -rowSums(otu))
+  arche <- rownames(otu)[ord][!duplicated(grp[ord])]
+  rownames(otu_sum) <- arche
+
+  tax_new <- tax[arche, , drop = FALSE]
+  if (ridx < ncol(tax_new)) tax_new[, (ridx + 1):ncol(tax_new)] <- NA_character_
+
+  if (!rows) otu_sum <- t(otu_sum)
+  parts <- list(otu_table(otu_sum, taxa_are_rows = rows), tax_table(tax_new))
+
+  sd <- sample_data(ps, errorIfNULL = FALSE)
+  if (!is.null(sd)) parts <- c(parts, list(sd))
+
+  tree <- phy_tree(ps, errorIfNULL = FALSE)
+  if (!is.null(tree)) parts <- c(parts, list(ape::keep.tip(tree, arche)))
+
+  do.call(phyloseq, parts)
+}
