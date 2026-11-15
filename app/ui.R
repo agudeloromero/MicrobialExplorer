@@ -17,8 +17,10 @@ ui <- page_fluid(
 
   # useShinyjs must be called inside the UI
   useShinyjs(),
+  # styles are placed in the page itself, so a stylesheet kept by the
+  # browser from an earlier session can never be used
   tags$head(
-    tags$link(rel = "stylesheet", href = "custom.css")
+    includeCSS("www/custom.css")
   ),
 
   # ── Top banner: title on the left, housekeeping links on the right ───────
