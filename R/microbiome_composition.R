@@ -26,6 +26,11 @@ suppressPackageStartupMessages({
   library(tibble)
 })
 
+
+# Shared helpers (fast_tax_glom, group_palette) live in R/utils.R.
+# Load them when this file is sourced on its own, e.g. by the test suite.
+if (!exists("fast_tax_glom") && file.exists("R/utils.R")) source("R/utils.R")
+
 # Global theme (consistent with QC module)
 theme_microbiome <- function() {
   theme_bw() +
@@ -254,7 +259,7 @@ plot_composition_bars <- function(ps,
                                     fill = .data[[group_var]])) +
       geom_col(width = 0.9) +
       scale_y_continuous(expand = c(0, 0)) +
-      scale_fill_brewer(palette = "Set2", name = group_var) +
+      scale_fill_group(name = group_var) +
       theme_void() +
       theme(
         legend.position = "right",
@@ -511,7 +516,7 @@ plot_abundance_heatmap <- function(ps,
                   "#1b9e77","#d95f02","#7570b3","#e7298a","#66a61e")
 
     grp_cols <- if (n_groups <= 8) {
-      scale_fill_brewer(palette = "Set2", name = group_var)
+      scale_fill_group(name = group_var)
     } else if (n_groups <= 20) {
       scale_fill_manual(
         values = setNames(pal_20[seq_len(n_groups)], levels(annot_df$grp_fill)),
@@ -739,7 +744,7 @@ plot_phylum_drilldown <- function(ps,
       geom_boxplot(outlier.size = 0.8, alpha = 0.75) +
       geom_jitter(width = 0.15, alpha = 0.4, size = 0.8) +
       facet_wrap(~ Genus, scales = "free_y", ncol = 5) +
-      scale_fill_brewer(palette = "Set2") +
+      scale_fill_group() +
       scale_y_continuous(labels = percent_format(accuracy = 0.01)) +
       labs(
         title    = paste0("Genus-level breakdown: ", phylum),
@@ -843,7 +848,7 @@ calculate_fb_ratio <- function(ps, group_var = NULL) {
                colour = "grey50", linewidth = 0.7) +
     annotate("text", x = 0.55, y = 0.1,
              label = "F:B = 1", hjust = 0, size = 3, colour = "grey50") +
-    scale_fill_brewer(palette = "Set2") +
+    scale_fill_group() +
     labs(
       title    = "Firmicutes : Bacteroidota ratio",
       subtitle = "log2 ratio | 0 = equal abundance | >0 = Firmicutes dominant",

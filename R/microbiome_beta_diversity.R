@@ -27,6 +27,11 @@ suppressPackageStartupMessages({
   library(stringr)
 })
 
+
+# Shared helpers (fast_tax_glom, group_palette) live in R/utils.R.
+# Load them when this file is sourced on its own, e.g. by the test suite.
+if (!exists("fast_tax_glom") && file.exists("R/utils.R")) source("R/utils.R")
+
 # Global theme
 theme_microbiome <- function() {
   theme_bw() +
@@ -263,7 +268,7 @@ plot_ordination <- function(ord_result,
 
   groups   <- unique(plot_df[[group_var]])
   n_groups <- length(groups)
-  colours  <- brewer.pal(max(3, n_groups), "Set2")[seq_len(n_groups)]
+  colours  <- group_palette(n_groups)
   names(colours) <- groups
 
   # Spider lines (centroids)
@@ -562,7 +567,7 @@ plot_betadisper <- function(dist_obj, ps, group_var = "group") {
     left_join(bd_centroids, by = "group")
   
   n_groups <- dplyr::n_distinct(bd_pcoa$group)
-  colours <- RColorBrewer::brewer.pal(max(3, n_groups), "Set2")[seq_len(n_groups)]
+  colours <- group_palette(n_groups)
   names(colours) <- levels(groups)
   
   p1 <- ggplot(bd_pcoa, aes(x = PC1, y = PC2, colour = group)) +
@@ -758,7 +763,7 @@ plot_envfit <- function(ord_result,
 
   groups    <- unique(plot_df[[group_var]])
   n_groups  <- length(groups)
-  colours   <- brewer.pal(max(3, n_groups), "Set2")[seq_len(n_groups)]
+  colours   <- group_palette(n_groups)
   names(colours) <- groups
 
   # Scale vectors for plotting

@@ -28,6 +28,11 @@ suppressPackageStartupMessages({
   library(forcats)
 })
 
+
+# Shared helpers (fast_tax_glom, group_palette) live in R/utils.R.
+# Load them when this file is sourced on its own, e.g. by the test suite.
+if (!exists("fast_tax_glom") && file.exists("R/utils.R")) source("R/utils.R")
+
 # Conditionally load method-specific packages
 pkg_available <- function(pkg) requireNamespace(pkg, quietly = TRUE)
 
@@ -73,7 +78,7 @@ prepare_da_data <- function(ps,
   cat("  Rank:", rank, "\n")
 
   # Agglomerate to chosen rank
-  ps_agg <- tax_glom(ps, taxrank = rank, NArm = FALSE)
+  ps_agg <- fast_tax_glom(ps, taxrank = rank, NArm = FALSE)
 
   # Rename taxa using rank label
   new_names <- as.character(tax_table(ps_agg)[, rank])
@@ -746,7 +751,7 @@ plot_da_heatmap <- function(ps,
                              cluster_cols    = TRUE) {
 
   # Agglomerate and filter to DA taxa
-  ps_agg  <- tax_glom(ps, taxrank = rank, NArm = FALSE)
+  ps_agg  <- fast_tax_glom(ps, taxrank = rank, NArm = FALSE)
   taxa_names(ps_agg) <- as.character(tax_table(ps_agg)[, rank])
   shared  <- intersect(da_taxa, taxa_names(ps_agg))
 
@@ -806,7 +811,7 @@ plot_da_heatmap <- function(ps,
   heat_df <- left_join(heat_df, meta_df, by = "sample")
 
   n_groups <- n_distinct(heat_df[[group_var]])
-  colours  <- brewer.pal(max(3, n_groups), "Set2")[seq_len(n_groups)]
+  colours  <- group_palette(n_groups)
   group_levels <- unique(heat_df[[group_var]])
   names(colours) <- group_levels
 
@@ -884,7 +889,7 @@ plot_da_boxplots <- function(ps,
 
   # Prepare data
   ps_rel  <- transform_sample_counts(ps, function(x) x / sum(x))
-  ps_agg  <- tax_glom(ps_rel, taxrank = rank, NArm = FALSE)
+  ps_agg  <- fast_tax_glom(ps_rel, taxrank = rank, NArm = FALSE)
   taxa_names(ps_agg) <- as.character(tax_table(ps_agg)[, rank])
 
   # Keep top DA taxa
@@ -901,7 +906,7 @@ plot_da_boxplots <- function(ps,
 
   groups   <- unique(as.character(ps_melt[[group_var]]))
   n_groups <- length(groups)
-  colours  <- brewer.pal(max(3, n_groups), "Set2")[seq_len(n_groups)]
+  colours  <- group_palette(n_groups)
   names(colours) <- groups
 
   y_label <- if (transform == "log10") "Log10(relative abundance)" else "Relative abundance"

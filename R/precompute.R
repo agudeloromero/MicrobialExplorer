@@ -58,14 +58,14 @@ precompute_all <- function(ps,
 
   # --- 1. Agglomerated phyloseq objects ------------------------------------
   cache_step("Agglomerating to Phylum", {
-    ps_phylum <- tax_glom(ps, taxrank = "Phylum", NArm = FALSE)
+    ps_phylum <- fast_tax_glom(ps, taxrank = "Phylum", NArm = FALSE)
     taxa_names(ps_phylum) <- as.character(tax_table(ps_phylum)[, "Phylum"])
     saveRDS(ps_phylum, file.path(output_dir, "ps_phylum.rds"))
     results$ps_phylum <- ps_phylum
   })
 
   cache_step("Agglomerating to Genus", {
-    ps_genus <- tax_glom(ps, taxrank = rank, NArm = FALSE)
+    ps_genus <- fast_tax_glom(ps, taxrank = rank, NArm = FALSE)
     new_names <- as.character(tax_table(ps_genus)[, rank])
     new_names[is.na(new_names)] <- paste0("Unknown_", seq_len(sum(is.na(new_names))))
     dup_idx <- duplicated(new_names)
@@ -178,7 +178,7 @@ precompute_all <- function(ps,
   cache_step("Composition summary tables", {
     comp_summary <- list()
     for (r in c("Phylum", "Family", rank)) {
-      ps_agg  <- tryCatch(tax_glom(ps, taxrank = r, NArm = FALSE),
+      ps_agg  <- tryCatch(fast_tax_glom(ps, taxrank = r, NArm = FALSE),
                            error = function(e) NULL)
       if (is.null(ps_agg)) next
       ps_rel  <- transform_sample_counts(ps_agg, function(x) x / sum(x))

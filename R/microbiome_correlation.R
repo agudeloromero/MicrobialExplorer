@@ -32,6 +32,11 @@ suppressPackageStartupMessages({
   library(ggrepel)
 })
 
+
+# Shared helpers (fast_tax_glom, group_palette) live in R/utils.R.
+# Load them when this file is sourced on its own, e.g. by the test suite.
+if (!exists("fast_tax_glom") && file.exists("R/utils.R")) source("R/utils.R")
+
 pkg_available <- function(pkg) requireNamespace(pkg, quietly = TRUE)
 
 # Global theme
@@ -85,7 +90,7 @@ correlate_taxa_metadata <- function(ps,
   cat("=== Taxa-metadata correlation ===\n")
 
   # --- Agglomerate and transform -------------------------------------------
-  ps_agg   <- tax_glom(ps, taxrank = rank, NArm = FALSE)
+  ps_agg   <- fast_tax_glom(ps, taxrank = rank, NArm = FALSE)
   new_names <- as.character(tax_table(ps_agg)[, rank])
   new_names[is.na(new_names)] <- paste0("Unknown_", seq_len(sum(is.na(new_names))))
   dup_idx  <- duplicated(new_names)
@@ -312,7 +317,7 @@ plot_top_associations <- function(ps,
   }
 
   # Prepare abundance data
-  ps_agg   <- tax_glom(ps, taxrank = rank, NArm = FALSE)
+  ps_agg   <- fast_tax_glom(ps, taxrank = rank, NArm = FALSE)
   new_names <- as.character(tax_table(ps_agg)[, rank])
   new_names[is.na(new_names)] <- paste0("Unknown_", seq_len(sum(is.na(new_names))))
   taxa_names(ps_agg) <- new_names
@@ -359,14 +364,14 @@ plot_top_associations <- function(ps,
 
     n_groups  <- if (!is.null(group_var) && "group" %in% colnames(scatter_df))
                    n_distinct(scatter_df$group) else 1
-    colours   <- brewer.pal(max(3, n_groups), "Set2")[seq_len(n_groups)]
+    colours   <- group_palette(n_groups)
 
     p <- ggplot(scatter_df, aes(x = metadata, y = abundance)) +
       {
         if (!is.null(group_var) && "group" %in% colnames(scatter_df)) {
           list(
             geom_point(aes(colour = group), alpha = 0.7, size = 1.8),
-            scale_colour_brewer(palette = "Set2", name = group_var)
+            scale_colour_group(name = group_var)
           )
         } else {
           list(geom_point(colour = "#3498db", alpha = 0.7, size = 1.8))
@@ -436,7 +441,7 @@ compute_taxa_taxa_correlation <- function(ps,
 
   cat("=== Taxa-taxa correlation matrix ===\n")
 
-  ps_agg   <- tax_glom(ps, taxrank = rank, NArm = FALSE)
+  ps_agg   <- fast_tax_glom(ps, taxrank = rank, NArm = FALSE)
   new_names <- as.character(tax_table(ps_agg)[, rank])
   new_names[is.na(new_names)] <- paste0("Unknown_", seq_len(sum(is.na(new_names))))
   dup_idx  <- duplicated(new_names)
@@ -739,7 +744,7 @@ correlate_cross_domain <- function(ps,
   cat("=== Cross-domain correlation (microbiome × external) ===\n")
 
   # Prepare microbiome features
-  ps_agg   <- tax_glom(ps, taxrank = rank, NArm = FALSE)
+  ps_agg   <- fast_tax_glom(ps, taxrank = rank, NArm = FALSE)
   new_names <- as.character(tax_table(ps_agg)[, rank])
   new_names[is.na(new_names)] <- paste0("Unknown_", seq_len(sum(is.na(new_names))))
   taxa_names(ps_agg) <- new_names
@@ -921,7 +926,7 @@ test_mixed_effects <- function(ps,
   library(lme4)
   library(lmerTest)
 
-  ps_agg   <- tax_glom(ps, taxrank = rank, NArm = FALSE)
+  ps_agg   <- fast_tax_glom(ps, taxrank = rank, NArm = FALSE)
   new_names <- as.character(tax_table(ps_agg)[, rank])
   new_names[is.na(new_names)] <- paste0("Unknown_", seq_len(sum(is.na(new_names))))
   taxa_names(ps_agg) <- new_names

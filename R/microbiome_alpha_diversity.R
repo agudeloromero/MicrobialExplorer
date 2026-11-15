@@ -26,6 +26,11 @@ suppressPackageStartupMessages({
   library(RColorBrewer)
 })
 
+
+# Shared helpers (fast_tax_glom, group_palette) live in R/utils.R.
+# Load them when this file is sourced on its own, e.g. by the test suite.
+if (!exists("fast_tax_glom") && file.exists("R/utils.R")) source("R/utils.R")
+
 # Global theme
 theme_microbiome <- function() {
   theme_bw() +
@@ -234,7 +239,7 @@ plot_alpha_diversity <- function(diversity_df,
 
   groups   <- unique(diversity_df[[group_var]])
   n_groups <- length(groups)
-  colours  <- brewer.pal(max(3, n_groups), "Set2")[seq_len(n_groups)]
+  colours  <- group_palette(n_groups)
   names(colours) <- groups
 
   # --- Statistical test per metric -----------------------------------------
@@ -329,7 +334,8 @@ plot_alpha_diversity <- function(diversity_df,
                            by = y_pad,
                            length.out = nrow(sig_df)),
           tip.length = 0.01,
-          size       = 3
+          size       = 3,
+          inherit.aes = FALSE
         )
       }
     }
@@ -467,8 +473,8 @@ plot_rarefaction_curves <- function(ps,
                             format(min(rowSums(otu_t)), big.mark = ",")),
              hjust = 0, size = 3, colour = "#e74c3c") +
     scale_x_continuous(labels = label_comma()) +
-    scale_colour_brewer(palette = "Set2", name = colour_var) +
-    scale_fill_brewer(palette = "Set2", guide = "none") +
+    scale_colour_group(name = colour_var) +
+    scale_fill_group(guide = "none") +
     labs(
       title    = "Rarefaction curves — observed richness",
       subtitle = paste0(nrow(otu_t), " samples | ",
@@ -541,7 +547,7 @@ plot_diversity_gradient <- function(diversity_df,
       if (!is.null(group_var) && group_var %in% colnames(diversity_df)) {
         list(
           geom_point(aes(colour = .data[[group_var]]), alpha = 0.7, size = 2),
-          scale_colour_brewer(palette = "Set2", name = group_var)
+          scale_colour_group(name = group_var)
         )
       } else {
         list(geom_point(colour = "#3498db", alpha = 0.7, size = 2))
@@ -651,8 +657,8 @@ plot_longitudinal_diversity <- function(diversity_df,
                 fill  = .data[[group_var]]),
             alpha = 0.2, inherit.aes = FALSE
           ),
-          scale_colour_brewer(palette = "Set2", name = group_var),
-          scale_fill_brewer(palette = "Set2", guide = "none")
+          scale_colour_group(name = group_var),
+          scale_fill_group(guide = "none")
         )
       } else {
         list(
