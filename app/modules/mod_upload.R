@@ -140,7 +140,13 @@ mod_upload_landing_ui <- function(id) {
         card_body(
           tags$h2(
             class = "fw-bold mb-1",
-            icon("bacteria", class = "text-success"), " MicrobialExplorer"
+            if (file.exists("www/logo.png")) {
+              tags$img(src = "logo.png", height = "48px",
+                       style = "margin-right:10px; vertical-align:middle;")
+            } else {
+              icon("bacteria", class = "text-success")
+            },
+            " MicrobialExplorer"
           ),
           tags$p(
             class = "lead text-muted",
