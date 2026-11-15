@@ -487,6 +487,66 @@ mod_qc_ui <- function(id) {
             downloadButton(ns("download_ps"), "Download filtered phyloseq (.rds)",
                            class = "btn btn-outline-primary btn-sm")
           )
+        ),
+
+        # Help
+        card(
+          card_header(icon("circle-info"), " How to read this tab"),
+          card_body(
+            class = "small",
+            layout_columns(
+              col_widths = c(6, 6),
+              tags$div(
+                tags$h6(class = "fw-bold", "QC summary table"),
+                tags$ul(
+                  tags$li(tags$strong("Uploaded data: "),
+                          "the dataset as you loaded it."),
+                  tags$li(tags$strong("Sample filter / Taxa filter: "),
+                          "the dataset after each filter. A row marked \"not applied\" ",
+                          "means that filter is not in use, so its numbers repeat the row above."),
+                  tags$li(tags$strong("Final dataset (in use): "),
+                          "what the analysis works with after the filters you applied."),
+                  tags$li(tags$strong("What to check: "),
+                          "how many samples and reads you keep. Losing many taxa but few reads ",
+                          "is normal. Losing a large share of the reads or of the samples means ",
+                          "the thresholds are probably too strict for this dataset.")
+                ),
+                tags$h6(class = "fw-bold mt-3", "Download"),
+                tags$ul(
+                  tags$li("The file contains the final dataset exactly as shown in the last row, ",
+                          "as an R phyloseq object. Open it in R with readRDS().")
+                )
+              ),
+              tags$div(
+                tags$h6(class = "fw-bold", "Reads vs taxon richness"),
+                tags$ul(
+                  tags$li(tags$strong("The question: "),
+                          "does the number of taxa found in a sample depend on how deeply it ",
+                          "was sequenced?"),
+                  tags$li(tags$strong("Each point is one sample "),
+                          "in the final dataset. Left to right: its total reads. Bottom to top: ",
+                          "the number of different taxa found in it. The dashed line is the ",
+                          "overall trend and the grey band its uncertainty."),
+                  tags$li(tags$strong("Good: "),
+                          "a flat or gently sloping line with points scattered around it. ",
+                          "Richness then reflects the samples, not the sequencing depth."),
+                  tags$li(tags$strong("A warning sign: "),
+                          "a clear upward slope with points close to the line. Samples with more ",
+                          "reads show more taxa simply because they were sequenced more, so ",
+                          "richness must be compared at equal depth (rarefaction)."),
+                  tags$li(tags$strong("Also look for: "),
+                          "points alone in the bottom-left corner (few reads and few taxa). ",
+                          "These are candidates for the Sample filter."),
+                  tags$li(tags$strong("Keep in mind: "),
+                          "very different sample types have very different richness, which ",
+                          "spreads the points vertically. That is biology, not a quality problem."),
+                  tags$li(tags$strong("Use it to compare settings: "),
+                          "apply a filter and come back. Removing rare taxa usually flattens ",
+                          "the trend, because rare taxa are the ones most dependent on depth.")
+                )
+              )
+            )
+          )
         )
       )
     )
