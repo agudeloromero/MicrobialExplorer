@@ -25,12 +25,13 @@ mod_composition_ui <- function(id) {
       value = "bars",
 
       layout_columns(
-        col_widths = c(3, 9),
+        col_widths = c(3, 9, 12),
 
         card(
           class = "border-0 bg-light",
           card_body(
             tags$h6(class = "fw-bold", "Parameters"),
+            uiOutput(ns("bars_rank_note")),
             numericInput(ns("bars_top_n"), "Top N taxa",
                          value = 20, min = 5, max = 50, step = 5),
             selectInput(ns("bars_sort"), "Sort samples by",
@@ -50,6 +51,76 @@ mod_composition_ui <- function(id) {
         card(
           card_body(
             plotOutput(ns("bars_plot"), height = "550px")
+          )
+        ),
+
+        # Help
+        card(
+          card_header(icon("circle-info"), " How to read this tab"),
+          card_body(
+            class = "small",
+            layout_columns(
+              col_widths = c(6, 6),
+              tags$div(
+                tags$h6(class = "fw-bold", "What you are looking at"),
+                tags$ul(
+                  tags$li(tags$strong("The question: "),
+                          "which taxa make up each sample, and do the groups look different?"),
+                  tags$li(tags$strong("Each bar is one sample. "),
+                          "Each colour is one taxon, and its height is the share of that ",
+                          "sample's reads belonging to it. Every bar adds up to 100%."),
+                  tags$li(tags$strong("The coloured bar on top "),
+                          "shows the group of each sample (the group variable in the sidebar)."),
+                  tags$li(tags$strong("Other (grey): "),
+                          "all the taxa outside the top N, added together."),
+                  tags$li(tags$strong("Unknown: "),
+                          "reads that could not be given a name at this rank. A large Unknown ",
+                          "share is common at genus level; try a higher rank such as family."),
+                  tags$li(tags$strong("Data in use: "),
+                          "the plot uses the dataset from the QC tab, including any sample or ",
+                          "taxa filter you applied there.")
+                ),
+                tags$h6(class = "fw-bold mt-3", "What to look for"),
+                tags$ul(
+                  tags$li("Samples from the same group that look alike, and groups that ",
+                          "look different from each other."),
+                  tags$li("A sample that looks nothing like the rest of its group: check it ",
+                          "for a mix-up, contamination or low reads."),
+                  tags$li("One taxon filling almost a whole bar: real in some sample types, ",
+                          "but also a sign of contamination in low-biomass samples.")
+                )
+              ),
+              tags$div(
+                tags$h6(class = "fw-bold", "Settings"),
+                tags$ul(
+                  tags$li(tags$strong("Taxonomic rank: "),
+                          "set with \"Taxonomic rank\" in the sidebar, under Analysis ",
+                          "parameters. Phylum gives the overview; family or genus give detail ",
+                          "but more Unknown."),
+                  tags$li(tags$strong("Top N taxa: "),
+                          "how many of the most abundant taxa get their own colour. 10 to 20 ",
+                          "is readable. Above 20 the colours start to repeat."),
+                  tags$li(tags$strong("Sort samples by: "),
+                          "Group puts samples of the same group side by side. Dominant taxon ",
+                          "puts samples with the same most abundant taxon together, which shows ",
+                          "patterns that cut across groups. None keeps the original order."),
+                  tags$li(tags$strong("Facet by: "),
+                          "splits the plot into one panel per level of a variable. Only ",
+                          "variables with 12 levels or fewer are offered."),
+                  tags$li(tags$strong("Reset to defaults: "),
+                          "puts Top N, sorting and facet back to their starting values.")
+                ),
+                tags$h6(class = "fw-bold mt-3", "Keep in mind"),
+                tags$ul(
+                  tags$li(tags$strong("These are proportions, not amounts. "),
+                          "If one taxon goes up, the others must go down in the plot even if ",
+                          "their real numbers did not change."),
+                  tags$li(tags$strong("This plot describes; it does not test. "),
+                          "Use the DA tab to test whether a taxon differs between groups, and ",
+                          "the Beta tab to test whether overall composition differs.")
+                )
+              )
+            )
           )
         )
       )
@@ -262,6 +333,14 @@ mod_composition_server <- function(id, upload_data, ps_qc, parent_input) {
       all_vars <- c("None" = "", facet_choices)
       selectInput(ns("bars_facet"), "Facet by",
                   choices = all_vars, selected = "")
+    })
+
+    # Rank used by the stacked bars (set in the sidebar)
+    output$bars_rank_note <- renderUI({
+      req(upload_data$features)
+      tags$p(class = "text-muted small",
+             "Taxonomic rank: ", tags$strong(resolve_rank()), tags$br(),
+             "Change it in the sidebar under Analysis parameters.")
     })
 
     # Reset the stacked-bar parameters to their starting values
