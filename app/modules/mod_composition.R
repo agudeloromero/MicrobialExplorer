@@ -367,29 +367,132 @@ mod_composition_ui <- function(id) {
       value = "fb",
 
       layout_columns(
-        col_widths = c(3, 9),
+        col_widths = c(12, 3, 5, 4, 12),
+
+        tags$div(
+          class = "alert alert-warning small mb-0",
+          icon("triangle-exclamation"),
+          tags$strong(" Designed for gut microbiome data. "),
+          "The Firmicutes:Bacteroidota ratio was first proposed for gut ",
+          "(faecal) samples. For other environments, such as soil, water, ",
+          "skin or airways, it has no established meaning, and the plot and ",
+          "tests below should not be interpreted."
+        ),
 
         card(
           class = "border-0 bg-light",
           card_body(
-            tags$h6(class = "fw-bold", "About"),
+            tags$h6(class = "fw-bold", "Statistical test"),
+            selectInput(ns("fb_design"), "Sample design",
+                        choices  = c("Unpaired (independent samples)" = "unpaired",
+                                     "Paired (same subjects in each group)" = "paired"),
+                        selected = "unpaired"),
+            uiOutput(ns("fb_pair_ui")),
             tags$p(class = "text-muted small",
-                   "Firmicutes:Bacteroidota ratio per sample. ",
-                   "Coloured by the selected group variable."),
-            tags$p(class = "text-muted small fst-italic",
-                   "Note: clinical significance of this ratio remains debated."),
+                   "Non-parametric tests only. Groups come from the group ",
+                   "variable in the sidebar."),
+            actionButton(ns("fb_show_sig"),
+                         label = tagList(icon("star"), " Show all significant"),
+                         class = "btn btn-outline-primary btn-sm w-100 mb-2"),
+            actionButton(ns("fb_clear"),
+                         label = tagList(icon("eraser"), " Clear brackets"),
+                         class = "btn btn-outline-secondary btn-sm w-100 mb-2"),
+            actionButton(ns("fb_reset"),
+                         label = tagList(icon("rotate-left"), " Reset to defaults"),
+                         class = "btn btn-outline-secondary btn-sm w-100"),
             hr(),
             tags$h6(class = "fw-bold", "Summary"),
             uiOutput(ns("fb_summary")),
             hr(),
             downloadButton(ns("dl_fb"), "Download plot",
+                           class = "btn btn-outline-secondary btn-sm w-100 mb-2"),
+            downloadButton(ns("dl_fb_table"), "Download test table",
                            class = "btn btn-outline-secondary btn-sm w-100")
           )
         ),
 
         card(
           card_body(
-            plotOutput(ns("fb_plot"), height = "500px")
+            plotOutput(ns("fb_plot"), height = "560px")
+          )
+        ),
+
+        card(
+          card_header(icon("table"), " Group comparisons"),
+          card_body(
+            uiOutput(ns("fb_overall")),
+            tags$p(class = "text-muted small mb-1",
+                   "Click a row to show that comparison on the plot; click ",
+                   "again to remove it. Grey rows cannot be tested."),
+            tags$style(HTML(paste0(
+              "#", ns("fb_table"), " table.dataTable tbody tr.selected > td {",
+              " background-color: #cfe8e3 !important; box-shadow: none !important;",
+              " color: inherit !important; font-weight: 600; }"))),
+            DT::dataTableOutput(ns("fb_table"))
+          )
+        ),
+
+        # Help
+        card(
+          card_header(icon("circle-info"), " How to read this tab"),
+          card_body(
+            class = "small",
+            layout_columns(
+              col_widths = c(6, 6),
+              tags$div(
+                tags$h6(class = "fw-bold", "What is shown"),
+                tags$ul(
+                  tags$li(tags$strong("The ratio: "),
+                          "relative abundance of Firmicutes (Bacillota) divided by ",
+                          "Bacteroidota (Bacteroidetes) in each sample, on a log2 scale. ",
+                          "0 means equal abundance, +1 means twice as much Firmicutes, ",
+                          "-1 means twice as much Bacteroidota."),
+                  tags$li(tags$strong("The plot: "),
+                          "one dot per sample, one box per group (median and quartiles). ",
+                          "The number of samples is under each group name."),
+                  tags$li(tags$strong("Samples without a ratio: "),
+                          "if either phylum is absent from a sample the ratio cannot be ",
+                          "calculated. These samples are left out of the plot and the ",
+                          "tests, and counted in the Summary."),
+                  tags$li(tags$strong("Use with care: "),
+                          "the ratio was designed for gut samples, summarises two very ",
+                          "broad phyla, and its clinical meaning is debated. Treat it as ",
+                          "a descriptive summary and confirm any difference in the ",
+                          "Differential abundance tab.")
+                )
+              ),
+              tags$div(
+                tags$h6(class = "fw-bold", "The tests, and how you control them"),
+                tags$ul(
+                  tags$li(tags$strong("Unpaired: "),
+                          "each sample comes from a different subject. Overall test: ",
+                          "Kruskal-Wallis. Pairs: Dunn's test (Wilcoxon rank-sum when ",
+                          "only two groups can be tested)."),
+                  tags$li(tags$strong("Paired: "),
+                          "the same subjects were sampled in each group (for example ",
+                          "before and after treatment). Choose the variable that ",
+                          "identifies the subject. Pairs: Wilcoxon signed-rank test on ",
+                          "subjects present in both groups. With more than two groups, ",
+                          "the overall Friedman test is given only when the same subjects ",
+                          "were sampled in every group (repeated measures, such as time ",
+                          "points); otherwise no overall test is reported."),
+                  tags$li(tags$strong("Read the overall test first. "),
+                          "If it is not significant, differences between single pairs ",
+                          "should not be reported."),
+                  tags$li(tags$strong("You choose what is drawn, not what is corrected. "),
+                          "Click the rows you want on the plot. The adjusted p-value ",
+                          "(Benjamini-Hochberg) always accounts for every comparison ",
+                          "tested in the table, whichever rows are shown. Brackets show ",
+                          "the adjusted p-value."),
+                  tags$li(tags$strong("Grey rows: "),
+                          "too few samples to test (fewer than 3 per group for unpaired, ",
+                          "fewer than 6 subjects in both groups for paired). With groups ",
+                          "this small a non-significant result does not mean there is no ",
+                          "difference, and a significant one should be confirmed with ",
+                          "more samples.")
+                )
+              )
+            )
           )
         )
       )
@@ -700,35 +803,188 @@ mod_composition_server <- function(id, upload_data, ps_qc, parent_input) {
     )
 
     # ── 4. F:B RATIO ──────────────────────────────────────────────────────
+    # Subject variable, shown only for the paired design
+    output$fb_pair_ui <- renderUI({
+      req(identical(input$fb_design, "paired"), upload_data$ps)
+      meta_df <- data.frame(sample_data(upload_data$ps), check.names = FALSE)
+      gv      <- group_var()
+      n_uni   <- vapply(meta_df, function(x) length(unique(stats::na.omit(x))), integer(1))
+      vars    <- setdiff(names(meta_df)[n_uni >= 2 & n_uni < nrow(meta_df)], gv)
+      selectInput(ns("fb_pair_var"), "Subject / pairing variable",
+                  choices = c("Choose a variable" = "", vars), selected = "")
+    })
+
+    # Ratio and tests; returns a list, or a message when it cannot be computed
     fb_result <- reactive({
       req(ps_work())
+      design <- if (is.null(input$fb_design)) "unpaired" else input$fb_design
+      pv     <- if (identical(design, "paired")) input$fb_pair_var else NULL
       tryCatch(
-        calculate_fb_ratio(ps_work(), group_var = group_var()),
-        error = function(e) { message("[mod_comp] fb ratio: ", e$message); NULL }
+        calculate_fb_ratio(ps_work(), group_var = group_var(),
+                           design = design, pair_var = pv),
+        error = function(e) {
+          message("[mod_comp] fb ratio: ", e$message)
+          conditionMessage(e)
+        }
       )
     })
 
+    fb_ok <- reactive({
+      res <- fb_result()
+      validate(need(is.list(res), if (is.character(res)) res else "F:B ratio not available."))
+      res
+    })
+
+    # Comparisons ticked in the table
+    fb_selected <- reactive({
+      pw  <- fb_ok()$pairwise
+      sel <- input$fb_table_rows_selected
+      if (is.null(pw) || length(sel) == 0) return(character(0))
+      sel <- sel[sel <= nrow(pw)]
+      pw$key[sel][pw$testable[sel]]
+    })
+
+    fb_plot_obj <- reactive({
+      res <- fb_ok()
+      plot_fb_ratio(res$data, res$group_var, pairwise = res$pairwise,
+                    show_pairs = fb_selected(), test_label = res$test_label)
+    })
+
     output$fb_plot <- renderPlot({
-      req(fb_result())
-      fb_result()$plot
+      fb_plot_obj()
+    })
+
+    output$fb_overall <- renderUI({
+      res <- fb_ok()
+      if (is.null(res$pairwise)) {
+        return(tags$p(class = "text-muted small",
+                      "Choose a group variable with at least two groups in the ",
+                      "sidebar to compare groups."))
+      }
+      ov <- res$overall
+      tagList(
+        tags$p(class = "small mb-1", tags$strong("Test: "), res$test_label),
+        if (!is.na(ov$test)) {
+          tags$p(class = "small mb-1",
+                 tags$strong("Overall: "),
+                 paste0(ov$test, ", ",
+                        if (!is.na(ov$p)) fb_format_p(ov$p, prefix = TRUE) else "not tested",
+                        " (n = ", ov$n, ")"))
+        },
+        if (nzchar(ov$note)) tags$p(class = "small text-warning-emphasis mb-1",
+                                    icon("triangle-exclamation"), " ", ov$note)
+      )
+    })
+
+    fb_table_df <- reactive({
+      res <- fb_ok()
+      pw  <- res$pairwise
+      req(pw)
+      paired <- identical(res$design, "paired")
+      df <- data.frame(
+        Comparison = pw$key,
+        n          = if (paired) paste(pw$n_pairs, "pairs") else paste0(pw$n1, "/", pw$n2),
+        p          = fb_format_p(pw$p),
+        `Adj. p`   = fb_format_p(pw$p_adj),
+        Sig.       = ifelse(!is.na(pw$p_adj) & pw$p_adj < 0.05, "yes", ""),
+        Note       = pw$note,
+        testable   = pw$testable,
+        check.names = FALSE, stringsAsFactors = FALSE
+      )
+      if (all(is.na(pw$n_pairs)) && paired) df$n <- ""
+      df
+    })
+
+    output$fb_table <- DT::renderDataTable({
+      df <- fb_table_df()
+      DT::datatable(
+        df, rownames = FALSE, selection = "multiple",
+        class = "compact hover small",
+        options = list(dom = "t", paging = FALSE, scrollY = "400px",
+                       ordering = FALSE,
+                       columnDefs = list(
+                         list(visible = FALSE, targets = ncol(df) - 1),
+                         list(className = "text-nowrap", targets = 1:4)))
+      ) %>%
+        DT::formatStyle("testable", target = "row",
+                        color = DT::styleEqual(c(TRUE, FALSE), c("inherit", "#adb5bd")),
+                        fontStyle = DT::styleEqual(c(TRUE, FALSE), c("normal", "italic")))
+    })
+
+    fb_proxy <- DT::dataTableProxy("fb_table")
+
+    # Rows that cannot be tested cannot be ticked
+    observeEvent(input$fb_table_rows_selected, {
+      res <- fb_result()
+      req(is.list(res), res$pairwise)
+      sel <- input$fb_table_rows_selected
+      bad <- sel[sel > nrow(res$pairwise) | !res$pairwise$testable[pmin(sel, nrow(res$pairwise))]]
+      if (length(bad) > 0) {
+        DT::selectRows(fb_proxy, setdiff(sel, bad))
+        showNotification("This comparison has too few samples to test.",
+                         type = "warning", duration = 4)
+      }
+    })
+
+    observeEvent(input$fb_show_sig, {
+      res <- fb_result()
+      req(is.list(res), res$pairwise)
+      sig <- which(res$pairwise$testable & !is.na(res$pairwise$p_adj) &
+                     res$pairwise$p_adj < 0.05)
+      DT::selectRows(fb_proxy, if (length(sig) > 0) sig else NULL)
+      if (length(sig) == 0) {
+        showNotification("No comparison has an adjusted p-value below 0.05.",
+                         type = "message", duration = 4)
+      }
+    })
+
+    observeEvent(input$fb_clear, {
+      DT::selectRows(fb_proxy, NULL)
+    })
+
+    observeEvent(input$fb_reset, {
+      updateSelectInput(session, "fb_design", selected = "unpaired")
+      DT::selectRows(fb_proxy, NULL)
     })
 
     output$fb_summary <- renderUI({
-      req(fb_result())
-      df <- fb_result()$data
+      res <- fb_ok()
+      df <- res$data
       med_fb <- round(median(df$FB_ratio, na.rm = TRUE), 2)
       tagList(
         stat_badge("Median F:B ratio", med_fb,
                    colour = if (!is.na(med_fb) && med_fb > 1) "warning" else "success"),
-        stat_badge("Samples with ratio", sum(!is.na(df$FB_ratio)))
+        stat_badge("Samples with ratio", sum(!is.na(df$FB_ratio))),
+        stat_badge("Samples without ratio", res$n_excluded,
+                   colour = if (res$n_excluded > 0) "warning" else "success")
       )
     })
 
     output$dl_fb <- downloadHandler(
       filename = function() paste0("fb_ratio_", Sys.Date(), ".pdf"),
       content  = function(file) {
-        req(fb_result())
-        ggplot2::ggsave(file, fb_result()$plot, width = 8, height = 6)
+        req(is.list(fb_result()))
+        ggplot2::ggsave(file, fb_plot_obj(), width = 9, height = 7)
+      }
+    )
+
+    output$dl_fb_table <- downloadHandler(
+      filename = function() paste0("fb_ratio_tests_", Sys.Date(), ".csv"),
+      content  = function(file) {
+        res <- fb_result()
+        req(is.list(res), res$pairwise)
+        pw <- res$pairwise
+        out <- data.frame(
+          group1 = pw$group1, group2 = pw$group2,
+          n1 = pw$n1, n2 = pw$n2,
+          p = signif(pw$p, 4), p_adjusted = signif(pw$p_adj, 4),
+          note = pw$note,
+          test = res$test_label,
+          overall_test = res$overall$test,
+          overall_p = signif(res$overall$p, 4),
+          stringsAsFactors = FALSE
+        )
+        write.csv(out, file, row.names = FALSE)
       }
     )
 
