@@ -131,7 +131,7 @@ mod_composition_ui <- function(id) {
       value = "mean_comp",
 
       layout_columns(
-        col_widths = c(3, 9),
+        col_widths = c(3, 9, 12),
 
         card(
           class = "border-0 bg-light",
@@ -140,6 +140,12 @@ mod_composition_ui <- function(id) {
             uiOutput(ns("mean_rank_ui")),
             numericInput(ns("mean_top_n"), "Top N taxa",
                          value = 10, min = 3, max = 20, step = 1),
+            selectInput(ns("mean_error"), "Error bars",
+                        choices = c("Standard error (SE)"      = "se",
+                                    "Standard deviation (SD)"  = "sd",
+                                    "95% confidence interval"  = "ci95",
+                                    "None"                     = "none"),
+                        selected = "se"),
             hr(),
             uiOutput(ns("mean_comp_note")),
             hr(),
@@ -151,6 +157,76 @@ mod_composition_ui <- function(id) {
         card(
           card_body(
             plotOutput(ns("mean_plot"), height = "500px")
+          )
+        ),
+
+        # Help
+        card(
+          card_header(icon("circle-info"), " How to read this tab"),
+          card_body(
+            class = "small",
+            layout_columns(
+              col_widths = c(6, 6),
+              tags$div(
+                tags$h6(class = "fw-bold", "What you are looking at"),
+                tags$ul(
+                  tags$li(tags$strong("The question: "),
+                          "on average, how abundant is each taxon in each group?"),
+                  tags$li(tags$strong("Each cluster of bars is one group "),
+                          "(the group variable in the sidebar). The number of samples in the ",
+                          "group is shown under its name."),
+                  tags$li(tags$strong("Each bar is one taxon. "),
+                          "Its height is the mean share of reads from that taxon across the ",
+                          "samples of the group."),
+                  tags$li(tags$strong("Other (grey): "),
+                          "all the taxa outside the top N, added together. With Other ",
+                          "included, the bars of a group add up to 100%."),
+                  tags$li(tags$strong("Unknown: "),
+                          "reads that could not be given a name at this rank.")
+                ),
+                tags$h6(class = "fw-bold mt-3", "Why this is useful"),
+                tags$ul(
+                  tags$li("It condenses the stacked bars into one profile per group, which is ",
+                          "easier to compare and to report."),
+                  tags$li("It shows which taxa characterise each group, and the error bars ",
+                          "show how consistent that is among the samples of the group."),
+                  tags$li("It gives a first idea of which taxa may differ between groups, to ",
+                          "follow up in the DA tab.")
+                )
+              ),
+              tags$div(
+                tags$h6(class = "fw-bold", "Error bars"),
+                tags$ul(
+                  tags$li(tags$strong("Standard error (SE): "),
+                          "how precisely the group mean is estimated. It gets smaller as the ",
+                          "number of samples grows. Use it to compare group means."),
+                  tags$li(tags$strong("Standard deviation (SD): "),
+                          "how much the samples of a group differ from each other. It does not ",
+                          "shrink with more samples. Use it to show variability."),
+                  tags$li(tags$strong("95% confidence interval: "),
+                          "the range likely to contain the true group mean. It is wide when a ",
+                          "group has few samples, which makes small groups visible."),
+                  tags$li(tags$strong("None: "),
+                          "bars only."),
+                  tags$li("Bars stop at 0%, because a proportion cannot be negative. No error ",
+                          "bar is drawn for a group with a single sample.")
+                ),
+                tags$h6(class = "fw-bold mt-3", "Keep in mind"),
+                tags$ul(
+                  tags$li(tags$strong("A mean hides the individual samples. "),
+                          "A tall bar with a long error bar can come from one sample. ",
+                          "Check the Stacked bars tab."),
+                  tags$li(tags$strong("With 2 or 3 samples per group "),
+                          "any error bar is a rough guide only. Always state the number of ",
+                          "samples and which error bar you used."),
+                  tags$li(tags$strong("Error bars are not a test. "),
+                          "Bars that overlap or do not overlap do not tell you whether groups ",
+                          "differ. Use the DA tab for that."),
+                  tags$li(tags$strong("Data in use: "),
+                          "the dataset from the QC tab, including any filter you applied there.")
+                )
+              )
+            )
           )
         )
       )
@@ -447,7 +523,8 @@ mod_composition_server <- function(id, upload_data, ps_qc, parent_input) {
         plot_mean_composition(ps_mean(),
                               rank      = rank_use,
                               group_var = group_var(),
-                              top_n     = input$mean_top_n),
+                              top_n     = input$mean_top_n,
+                              error_bar = input$mean_error %||% "se"),
         error = function(e) { message("[mod_comp] mean plot: ", e$message); NULL }
       )
     })
