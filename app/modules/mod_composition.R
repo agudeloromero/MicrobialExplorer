@@ -31,7 +31,7 @@ mod_composition_ui <- function(id) {
           class = "border-0 bg-light",
           card_body(
             tags$h6(class = "fw-bold", "Parameters"),
-            uiOutput(ns("bars_rank_note")),
+            uiOutput(ns("bars_rank_ui")),
             numericInput(ns("bars_top_n"), "Top N taxa",
                          value = 20, min = 5, max = 50, step = 5),
             selectInput(ns("bars_sort"), "Sort samples by",
@@ -94,9 +94,8 @@ mod_composition_ui <- function(id) {
                 tags$h6(class = "fw-bold", "Settings"),
                 tags$ul(
                   tags$li(tags$strong("Taxonomic rank: "),
-                          "set with \"Taxonomic rank\" in the sidebar, under Analysis ",
-                          "parameters. Phylum gives the overview; family or genus give detail ",
-                          "but more Unknown."),
+                          "the level the reads are grouped at. Phylum gives the overview; ",
+                          "family or genus give detail but more Unknown."),
                   tags$li(tags$strong("Top N taxa: "),
                           "how many of the most abundant taxa get their own colour. 10 to 20 ",
                           "is readable. Above 20 the colours start to repeat."),
@@ -108,7 +107,7 @@ mod_composition_ui <- function(id) {
                           "splits the plot into one panel per level of a variable. Only ",
                           "variables with 12 levels or fewer are offered."),
                   tags$li(tags$strong("Reset to defaults: "),
-                          "puts Top N, sorting and facet back to their starting values.")
+                          "puts rank, Top N, sorting and facet back to their starting values.")
                 ),
                 tags$h6(class = "fw-bold mt-3", "Keep in mind"),
                 tags$ul(
@@ -138,6 +137,7 @@ mod_composition_ui <- function(id) {
           class = "border-0 bg-light",
           card_body(
             tags$h6(class = "fw-bold", "Parameters"),
+            uiOutput(ns("mean_rank_ui")),
             numericInput(ns("mean_top_n"), "Top N taxa",
                          value = 10, min = 3, max = 20, step = 1),
             hr(),
@@ -335,16 +335,12 @@ mod_composition_server <- function(id, upload_data, ps_qc, parent_input) {
                   choices = all_vars, selected = "")
     })
 
-    # Rank used by the stacked bars (set in the sidebar)
-    output$bars_rank_note <- renderUI({
-      req(upload_data$features)
-      tags$p(class = "text-muted small",
-             "Taxonomic rank: ", tags$strong(resolve_rank()), tags$br(),
-             "Change it in the sidebar under Analysis parameters.")
-    })
-
     # Reset the stacked-bar parameters to their starting values
     observeEvent(input$bars_reset, {
+      feat <- upload_data$features
+      preferred <- intersect(c("Genus", "Family", "Order", "Phylum"), feat$avail_ranks)
+      updateSelectInput(session, "bars_rank",
+                        selected = if (length(preferred) > 0) preferred[1] else feat$avail_ranks[1])
       updateNumericInput(session, "bars_top_n", value = 20)
       updateSelectInput(session, "bars_sort",  selected = "group")
       updateSelectInput(session, "bars_facet", selected = "")
@@ -361,6 +357,8 @@ mod_composition_server <- function(id, upload_data, ps_qc, parent_input) {
     }
 
     output$table_rank_ui <- renderUI({ .rank_selector("table_rank") })
+    output$bars_rank_ui  <- renderUI({ .rank_selector("bars_rank", "Taxonomic rank") })
+    output$mean_rank_ui  <- renderUI({ .rank_selector("mean_rank", "Taxonomic rank") })
 
     # Heatmap group/sort selector
     output$heat_group_ui <- renderUI({
@@ -373,8 +371,7 @@ mod_composition_server <- function(id, upload_data, ps_qc, parent_input) {
     })
 
     # Helper: resolve rank
-    # bars/mean: always use global sidebar (no local selector)
-    # heatmap/table: use local selector, fall back to global
+    # each sub-tab has its own rank selector and falls back to the sidebar
     resolve_rank <- function(local_val = NULL) {
       if (!is.null(local_val) && nzchar(local_val)) return(local_val)
       grank <- parent_input$tax_rank
@@ -392,7 +389,7 @@ mod_composition_server <- function(id, upload_data, ps_qc, parent_input) {
     # ── 1. STACKED BARS ───────────────────────────────────────────────────
     ps_bars <- reactive({
       req(ps_work())
-      rank_use <- resolve_rank()   # uses global sidebar
+      rank_use <- resolve_rank(input$bars_rank)
       tryCatch(
         agglomerate_taxa(ps_work(),
                          rank      = rank_use,
@@ -404,7 +401,7 @@ mod_composition_server <- function(id, upload_data, ps_qc, parent_input) {
 
     bars_plot_obj <- reactive({
       req(ps_bars())
-      rank_use <- resolve_rank()
+      rank_use <- resolve_rank(input$bars_rank)
       facet <- if (is.null(input$bars_facet) || input$bars_facet == "") NULL
                else input$bars_facet
       tryCatch(
@@ -433,7 +430,7 @@ mod_composition_server <- function(id, upload_data, ps_qc, parent_input) {
     # ── 2. MEAN COMPOSITION ───────────────────────────────────────────────
     ps_mean <- reactive({
       req(ps_work())
-      rank_use <- resolve_rank()   # uses global sidebar
+      rank_use <- resolve_rank(input$mean_rank)
       tryCatch(
         agglomerate_taxa(ps_work(),
                          rank      = rank_use,
@@ -445,7 +442,7 @@ mod_composition_server <- function(id, upload_data, ps_qc, parent_input) {
 
     mean_plot_obj <- reactive({
       req(ps_mean(), group_var())
-      rank_use <- resolve_rank()
+      rank_use <- resolve_rank(input$mean_rank)
       tryCatch(
         plot_mean_composition(ps_mean(),
                               rank      = rank_use,
