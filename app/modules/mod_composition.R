@@ -38,6 +38,9 @@ mod_composition_ui <- function(id) {
                                     "Dominant taxon" = "dominant_taxon",
                                     "None" = "none")),
             uiOutput(ns("bars_facet_ui")),
+            actionButton(ns("bars_reset"),
+                         label = tagList(icon("rotate-left"), " Reset to defaults"),
+                         class = "btn btn-outline-secondary btn-sm w-100"),
             hr(),
             downloadButton(ns("dl_bars"), "Download plot",
                            class = "btn btn-outline-secondary btn-sm w-100")
@@ -251,9 +254,21 @@ mod_composition_server <- function(id, upload_data, ps_qc, parent_input) {
       facet_choices <- if (length(feat$group_vars) > 0) feat$group_vars
                        else if (length(feat$cat_vars) > 0) feat$cat_vars
                        else feat$sample_vars
+      # A facet with many levels gives panels too narrow to read
+      meta_df <- data.frame(sample_data(upload_data$ps), check.names = FALSE)
+      facet_choices <- Filter(function(v) {
+        v %in% colnames(meta_df) && dplyr::n_distinct(meta_df[[v]]) <= 12
+      }, facet_choices)
       all_vars <- c("None" = "", facet_choices)
       selectInput(ns("bars_facet"), "Facet by",
                   choices = all_vars, selected = "")
+    })
+
+    # Reset the stacked-bar parameters to their starting values
+    observeEvent(input$bars_reset, {
+      updateNumericInput(session, "bars_top_n", value = 20)
+      updateSelectInput(session, "bars_sort",  selected = "group")
+      updateSelectInput(session, "bars_facet", selected = "")
     })
 
     # ── Rank selectors rendered as uiOutput so they populate correctly ────
