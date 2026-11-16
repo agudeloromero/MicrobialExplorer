@@ -1229,14 +1229,57 @@ plot_fb_ratio <- function(ratio_df, group_var = NULL, pairwise = NULL,
 #'
 #' @param ps              A phyloseq object.
 #' @param prevalence_cuts Vector of prevalence thresholds to evaluate. Default = c(0.5, 0.75, 0.9).
+#' @param core_threshold  Prevalence a taxon must reach to be called core. Default = 0.75.
 #' @param min_abundance   Minimum relative abundance to count as "present". Default = 0.001.
 #' @param group_var       Optional metadata variable for group-specific core.
-#' @return A list: plot, core taxa list, and summary table.
+#' @param label_n         Number of taxon names written on the plot, per panel. Default = 5.
+#' @return A list: plot, core taxa, core detail table, threshold used,
+#'         per-taxon prevalence and the summary table.
+
+#' Draw taxon names next to the points of the core microbiome plot.
+#'
+#' ggrepel moves the names apart and draws a line back to each point; when it
+#' is not installed, plain labels are used instead.
+#'
+#' @param label_df Data frame with prevalence, log_abund and taxon.
+#' @return A ggplot layer, or NULL when there is nothing to label.
+
+core_label_layer <- function(label_df) {
+
+  if (is.null(label_df) || nrow(label_df) == 0) return(NULL)
+
+  if (requireNamespace("ggrepel", quietly = TRUE)) {
+    return(ggrepel::geom_text_repel(
+      data            = label_df,
+      aes(label = taxon),
+      size            = 3,
+      fontface        = "italic",
+      colour          = "grey20",
+      direction       = "y",
+      hjust           = 0,
+      xlim            = c(1.04, 1.42),
+      segment.size    = 0.25,
+      segment.colour  = "grey65",
+      min.segment.length = 0,
+      box.padding     = 0.2,
+      max.overlaps    = Inf,
+      seed            = 42,
+      show.legend     = FALSE
+    ))
+  }
+
+  geom_text(data = label_df, aes(label = taxon),
+            size = 3, hjust = -0.1, fontface = "italic",
+            colour = "grey20", show.legend = FALSE)
+}
+
 
 identify_core_microbiome <- function(ps,
                                       prevalence_cuts = c(0.5, 0.75, 0.9),
+                                      core_threshold  = 0.75,
                                       min_abundance   = 0.001,
-                                      group_var       = NULL) {
+                                      group_var       = NULL,
+                                      label_n         = 5) {
 
   cat("=== Core microbiome identification ===\n")
 
@@ -1286,66 +1329,79 @@ identify_core_microbiome <- function(ps,
   print(core_summary)
   cat("\n")
 
-  # Most stringent core
-  strictest_core <- prev_df %>%
-    filter(prevalence >= max(prevalence_cuts)) %>%
+  # Core set at the chosen threshold
+  core_detail <- prev_df %>%
+    filter(prevalence >= core_threshold) %>%
     arrange(desc(mean_abund)) %>%
-    pull(taxon) %>% unique()
+    select(taxon, group, prevalence, mean_abund)
 
-  cat("  Core taxa (>= ", max(prevalence_cuts) * 100, "% prevalence): ",
-      length(strictest_core), "\n\n", sep = "")
+  core_taxa <- unique(core_detail$taxon)
+
+  cat("  Core taxa (>= ", core_threshold * 100, "% prevalence): ",
+      length(core_taxa), "\n\n", sep = "")
 
   # --- Plot: prevalence vs abundance scatter --------------------------------
+  cuts     <- sort(unique(c(prevalence_cuts, core_threshold)))
+  core_lab <- paste0("Core (\u2265", core_threshold * 100, "%)")
+
   prev_plot_df <- prev_df %>%
     mutate(
-      is_core = prevalence >= 0.75,
+      core      = prevalence >= core_threshold,
+      is_core   = factor(prevalence >= core_threshold, levels = c(FALSE, TRUE)),
       log_abund = log10(mean_abund + 1e-5)
     )
 
+  has_groups <- length(unique(prev_plot_df$group)) > 1
+
+  # Taxa whose names are written on the plot: the most abundant core taxa
+  # (per panel when the samples are split into groups)
+  label_df <- prev_plot_df %>% filter(core)
+  if (has_groups) label_df <- label_df %>% group_by(group)
+  label_df <- label_df %>%
+    arrange(desc(mean_abund)) %>%
+    slice_head(n = max(0, label_n)) %>%
+    ungroup()
+
   p <- ggplot(prev_plot_df, aes(x = prevalence, y = log_abund)) +
+    geom_point(aes(colour = is_core), alpha = 0.6, size = 1.8) +
+    scale_colour_manual(values = c(`FALSE` = "#95a5a6", `TRUE` = "#e74c3c"),
+                        labels = c("Peripheral", core_lab),
+                        name   = "Status", drop = FALSE) +
+    # One panel per group, so a taxon can be core in one group and not in another
     {
-      if (!is.null(group_var) && group_var %in% colnames(prev_plot_df)) {
-        list(
-          geom_point(aes(colour = group, shape = is_core), alpha = 0.6, size = 1.8),
-          facet_wrap(~ group)
-        )
-      } else {
-        list(
-          geom_point(aes(colour = is_core), alpha = 0.6, size = 1.8),
-          scale_colour_manual(values = c(`FALSE` = "#95a5a6", `TRUE` = "#e74c3c"),
-                              labels = c("Peripheral", "Core (≥75%)"),
-                              name   = "Status")
-        )
-      }
+      if (has_groups) facet_wrap(~ group) else NULL
     } +
     # Threshold lines
-    geom_vline(xintercept = prevalence_cuts,
+    geom_vline(xintercept = cuts,
                linetype = "dashed", colour = "#e74c3c", alpha = 0.6, linewidth = 0.6) +
-    geom_text(data = data.frame(x = prevalence_cuts + 0.01,
-                                y = max(prev_plot_df$log_abund) * 0.95,
-                                label = paste0(prevalence_cuts * 100, "%")),
+    # threshold labels sit at the bottom, clear of the taxon names
+    geom_text(data = data.frame(x = cuts + 0.01,
+                                y = min(prev_plot_df$log_abund),
+                                label = paste0(cuts * 100, "%")),
               aes(x = x, y = y, label = label),
               hjust = 0, size = 2.5, colour = "#e74c3c", inherit.aes = FALSE) +
-    geom_text(
-      data = prev_plot_df %>% filter(is_core) %>%
-        arrange(desc(mean_abund)) %>% slice_head(n = 10),
-      aes(label = taxon), size = 2.5, hjust = -0.1, fontface = "italic"
-    ) +
+    # Taxon names, kept in the free space on the right of the panel
+    core_label_layer(label_df) +
     scale_x_continuous(labels = percent_format(accuracy = 1),
-                       limits = c(0, 1.05)) +
+                       breaks = seq(0, 1, 0.25),
+                       limits = c(0, 1.42)) +
     labs(
       title    = "Core microbiome — prevalence vs abundance",
-      subtitle = paste0("Min abundance threshold: ", min_abundance * 100, "%"),
+      subtitle = paste0("Present at \u2265 ", min_abundance * 100,
+                        "% abundance | core = \u2265 ", core_threshold * 100,
+                        "% of samples"),
       x        = "Prevalence (fraction of samples)",
       y        = "Log10 mean relative abundance"
     ) +
     theme_microbiome()
 
   return(list(
-    plot         = p,
-    core_taxa    = strictest_core,
-    prevalence   = prev_df,
-    core_summary = core_summary
+    plot           = p,
+    core_taxa      = core_taxa,
+    core_detail    = core_detail,
+    core_threshold = core_threshold,
+    prevalence     = prev_df,
+    core_summary   = core_summary
   ))
 }
 
