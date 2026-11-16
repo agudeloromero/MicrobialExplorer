@@ -29,48 +29,105 @@ mod_alpha_ui <- function(id) {
             selected = c("observed", "shannon", "simpson", "pielou")
           ),
           selectInput(ns("box_test"), "Statistical test",
-                      choices  = c("Wilcoxon"       = "wilcox",
-                                   "t-test"         = "t.test",
-                                   "Kruskal-Wallis" = "kruskal",
-                                   "ANOVA"          = "anova"),
+                      choices  = c("Non-parametric (Wilcoxon)" = "wilcox",
+                                   "Parametric (t-test)"       = "t.test"),
                       selected = "wilcox"),
+          selectInput(ns("box_design"), "Sample design",
+                      choices  = c("Unpaired (independent samples)" = "unpaired",
+                                   "Paired (same subjects in each group)" = "paired"),
+                      selected = "unpaired"),
+          uiOutput(ns("box_pair_ui")),
+          selectInput(ns("box_comparisons"), "Comparisons on the plot",
+                      choices  = c("Significant only" = "significant",
+                                   "All pairs"        = "all",
+                                   "None"             = "none"),
+                      selected = "significant"),
           checkboxInput(ns("box_points"), "Show data points", value = TRUE),
+          actionButton(ns("box_reset"),
+                       label = tagList(icon("rotate-left"), " Reset to defaults"),
+                       class = "btn btn-outline-secondary btn-sm w-100 mt-2"),
           hr(),
           downloadButton(ns("box_download"), "Download plot",
-                         class = "btn btn-outline-secondary btn-sm w-100",
-                         disabled = "disabled")
+                         class = "btn btn-outline-secondary btn-sm w-100 mb-2",
+                         disabled = "disabled"),
+          downloadButton(ns("box_stats_download"), "Download statistics (.csv)",
+                         class = "btn btn-outline-secondary btn-sm w-100")
         ),
+        uiOutput(ns("alpha_depth_note")),
         plotOutput(ns("box_plot"), height = "550px"),
         hr(),
-        DT::DTOutput(ns("box_stats"))
-      )
-    ),
+        tags$h6(class = "fw-bold", "Group comparisons"),
+        DT::DTOutput(ns("box_stats")),
+        hr(),
 
-    # ── 2. Rarefaction curves ────────────────────────────────────────────────
-    nav_panel(
-      title = tagList(icon("chart-line"), " Rarefaction"),
-      value = "rare",
-      layout_sidebar(
-        sidebar = sidebar(
-          width = 320, open = "always",
-          tags$h6("Parameters"),
-          numericInput(ns("rare_points"), "Points per curve",
-                       value = 20, min = 5, max = 100, step = 5),
-          numericInput(ns("rare_n_iter"), "Iterations per point",
-                       value = 3, min = 1, max = 10, step = 1),
-          actionButton(ns("run_rarefaction"),
-                       label = tagList(icon("play"), " Draw curves"),
-                       class = "btn btn-primary btn-sm w-100 mb-2"),
-          tags$p(class = "text-muted small",
-                 "These curves are slow on deeply sequenced data, so they are ",
-                 "only computed when you ask. More points and more iterations ",
-                 "give smoother curves and take longer."),
-          hr(),
-          downloadButton(ns("rare_download"), "Download plot",
-                         class = "btn btn-outline-secondary btn-sm w-100",
-                         disabled = "disabled")
-        ),
-        plotOutput(ns("rare_plot"), height = "550px")
+        # Help
+        card(
+          card_header(icon("circle-info"), " How to read this tab"),
+          card_body(
+            class = "small",
+            layout_columns(
+              col_widths = c(6, 6),
+              tags$div(
+                tags$h6(class = "fw-bold", "What alpha diversity is"),
+                tags$ul(
+                  tags$li(tags$strong("Diversity inside one sample. "),
+                          "Each dot is a sample, each box a group. Alpha diversity ",
+                          "asks how varied one community is; comparing whole ",
+                          "communities between samples is the Beta tab."),
+                  tags$li(tags$strong("The metrics measure different things. "),
+                          "Observed richness counts taxa. Shannon combines richness ",
+                          "with evenness. Simpson is dominated by the common taxa, so ",
+                          "it is insensitive to rare ones. Pielou's evenness asks how ",
+                          "equally abundance is shared. Faith's PD counts the branch ",
+                          "length of the tree covered, so it needs a phylogenetic tree. ",
+                          "Reporting one from each family gives a fuller picture than ",
+                          "reporting several that measure the same thing."),
+                  tags$li(tags$strong("Chao1 and ACE need singletons. "),
+                          "They estimate unseen taxa from taxa seen once or twice. ",
+                          "Pipelines that build ASVs, such as DADA2, remove singletons, ",
+                          "so for ASV data these two are not interpretable. They are ",
+                          "fine for OTU tables that keep singletons."),
+                  tags$li(tags$strong("Everything here is computed at one depth. "),
+                          "Counts are subsampled to the shallowest sample and averaged ",
+                          "over ten draws, which is current best practice for comparing ",
+                          "diversity between samples of unequal depth.")
+                )
+              ),
+              tags$div(
+                tags$h6(class = "fw-bold", "The tests, and how to choose"),
+                tags$ul(
+                  tags$li(tags$strong("Groups are compared two at a time. "),
+                          "There is no overall test: each pair gets its own p-value and ",
+                          "the whole set is corrected together (Benjamini-Hochberg)."),
+                  tags$li(tags$strong("Non-parametric (Wilcoxon) is the default "),
+                          "and is what most microbiome papers use, because diversity ",
+                          "values are often skewed and groups are small. Choose ",
+                          "parametric (t-test) only if you have checked that the values ",
+                          "are roughly normal within each group."),
+                  tags$li(tags$strong("Unpaired or paired. "),
+                          "Paired means the same subject appears in both groups, such ",
+                          "as before and after treatment; then choose the variable that ",
+                          "identifies the subject, and only subjects present in both ",
+                          "groups are used."),
+                  tags$li(tags$strong("Small groups cannot reach significance. "),
+                          "With three samples against three, the smallest possible ",
+                          "p-value from a rank test is 0.10, so a result of ",
+                          "\"not significant\" there says nothing about the biology. ",
+                          "Pairs that are too small are listed in the table with a note ",
+                          "instead of a p-value."),
+                  tags$li(tags$strong("Many groups cost power. "),
+                          "Nine groups make 36 comparisons, and correcting for all of ",
+                          "them raises every p-value. If only two groups matter to your ",
+                          "question, compare those by choosing a group variable with ",
+                          "fewer levels."),
+                  tags$li(tags$strong("Brackets show the adjusted p-value. "),
+                          "By default only significant pairs are drawn; the full table ",
+                          "below lists every pair and can be downloaded.")
+                )
+              )
+            )
+          )
+        )
       )
     ),
 
@@ -155,20 +212,78 @@ mod_alpha_server <- function(id, upload_data, parent_input) {
     })
 
     # ── 1. Boxplots ──────────────────────────────────────────────────────────
+    # Subject variable, shown only for the paired design
+    output$box_pair_ui <- renderUI({
+      req(identical(input$box_design, "paired"), upload_data$ps)
+      meta_df <- data.frame(sample_data(upload_data$ps), check.names = FALSE)
+      gv      <- group_var()
+      n_uni   <- vapply(meta_df, function(x) length(unique(stats::na.omit(x))),
+                        integer(1))
+      vars    <- setdiff(names(meta_df)[n_uni >= 2 & n_uni < nrow(meta_df)], gv)
+      selectInput(ns("box_pair_var"), "Subject / pairing variable",
+                  choices = c("Choose a variable" = "", vars), selected = "")
+    })
+
+    # Depth actually used for every metric on this tab
+    output$alpha_depth_note <- renderUI({
+      req(ps_work())
+      depths <- sample_sums(ps_work())
+      depth  <- min(depths)
+      med    <- stats::median(depths)
+      n_low  <- sum(depths < med / 2)
+      tags$div(
+        class = "alert alert-warning small",
+        icon("triangle-exclamation"),
+        tags$strong(" All metrics are computed at ",
+                    format(round(depth), big.mark = ","), " reads"),
+        ", the depth of your shallowest sample, with counts subsampled to that ",
+        "depth and averaged over ten draws. ",
+        if (n_low > 0) {
+          tagList(
+            tags$strong(n_low, if (n_low == 1) " sample has" else " samples have"),
+            " fewer than half the median depth of ",
+            format(round(med), big.mark = ","),
+            " reads and are pulling this threshold down. Remove them in ",
+            tags$strong("QC \u2192 Sample filter"),
+            " and come back, or the diversity of every other sample is measured ",
+            "on a fraction of its reads."
+          )
+        } else {
+          "Sample depths are even enough that little is lost."
+        }
+      )
+    })
+
     box_result <- reactive({
       req(diversity_df())
       gv <- group_var()
       req(gv, length(input$box_metrics) > 0)
+      paired <- identical(input$box_design, "paired")
+      pv     <- if (paired) input$box_pair_var else NULL
+      if (paired && (is.null(pv) || !nzchar(pv))) return(NULL)
       tryCatch({
         plot_alpha_diversity(diversity_df(),
                              metrics     = input$box_metrics,
                              group_var   = gv,
                              test        = input$box_test,
+                             paired      = paired,
+                             pair_var    = pv,
+                             comparisons = input$box_comparisons,
                              show_points = input$box_points)
       }, error = function(e) {
         message("[mod_alpha] boxplot error: ", e$message)
         NULL
       })
+    })
+
+    observeEvent(input$box_reset, {
+      updateCheckboxGroupInput(session, "box_metrics",
+                               selected = c("observed", "shannon",
+                                            "simpson", "pielou"))
+      updateSelectInput(session, "box_test", selected = "wilcox")
+      updateSelectInput(session, "box_design", selected = "unpaired")
+      updateSelectInput(session, "box_comparisons", selected = "significant")
+      updateCheckboxInput(session, "box_points", value = TRUE)
     })
 
     box_plot_obj <- reactive({
@@ -177,24 +292,44 @@ mod_alpha_server <- function(id, upload_data, parent_input) {
     })
 
     output$box_plot <- renderPlot({
+      validate(need(!identical(input$box_design, "paired") ||
+                      (!is.null(input$box_pair_var) && nzchar(input$box_pair_var)),
+                    "Choose the variable that identifies the subject."))
       req(box_plot_obj())
       box_plot_obj()
     })
 
-    output$box_stats <- DT::renderDT({
+    box_stats_df <- reactive({
       req(box_result())
       stats <- box_result()$stats
       req(stats)
       df_stats <- dplyr::bind_rows(stats)
       df_stats <- df_stats[, c(".metric", "group1", "group2", "n1", "n2",
-                                "statistic", "p", "p.adj", "p.adj.signif")]
+                                "statistic", "p", "p.adj", "p.adj.signif",
+                                "note")]
       names(df_stats) <- c("Metric", "Group 1", "Group 2", "n1", "n2",
-                            "Statistic", "p", "p.adj", "Significance")
+                            "Statistic", "p", "p.adj", "Significance", "Note")
       num_cols <- sapply(df_stats, is.numeric)
       df_stats[num_cols] <- lapply(df_stats[num_cols], round, 4)
-      DT::datatable(df_stats, options = list(dom = "t", pageLength = 20),
-                    rownames = FALSE)
+      df_stats
     })
+
+    output$box_stats <- DT::renderDT({
+      DT::datatable(box_stats_df(), rownames = FALSE,
+                    class = "compact hover small",
+                    options = list(dom = "ftp", pageLength = 10,
+                                   order = list(list(7, "asc"))))
+    })
+
+    output$box_stats_download <- downloadHandler(
+      filename = function() paste0("alpha_statistics_", Sys.Date(), ".csv"),
+      content  = function(file) {
+        req(box_result())
+        out <- box_stats_df()
+        out$Test <- box_result()$test_label
+        write.csv(out, file, row.names = FALSE)
+      }
+    )
 
     output$box_download <- downloadHandler(
       filename = function() paste0("alpha_boxplots_", Sys.Date(), ".pdf"),
@@ -205,42 +340,6 @@ mod_alpha_server <- function(id, upload_data, parent_input) {
     )
 
     # ── 2. Rarefaction curves ────────────────────────────────────────────────
-    # Curves are the slowest step in this module and would hold up every other
-    # plot, so they wait for the button on their own sub-tab
-    rare_plot_obj <- eventReactive(input$run_rarefaction, {
-      req(ps_work())
-      gv <- group_var()
-      n_points <- input$rare_points
-      if (is.null(n_points) || is.na(n_points)) n_points <- 20
-      withProgress(message = "Computing rarefaction curves", value = 0.3, {
-        tryCatch(
-          plot_rarefaction_curves(ps_work(),
-                                  n_points  = n_points,
-                                  n_iter    = input$rare_n_iter,
-                                  group_var = gv),
-          error = function(e) {
-            message("[mod_alpha] rarefaction error: ", e$message)
-            NULL
-          }
-        )
-      })
-    })
-
-    output$rare_plot <- renderPlot({
-      validate(need(input$run_rarefaction > 0,
-                    "Choose the settings and click 'Draw curves'."))
-      req(rare_plot_obj())
-      rare_plot_obj()
-    })
-
-    output$rare_download <- downloadHandler(
-      filename = function() paste0("rarefaction_", Sys.Date(), ".pdf"),
-      content  = function(file) {
-        req(rare_plot_obj())
-        ggplot2::ggsave(file, rare_plot_obj(), width = 10, height = 7)
-      }
-    )
-
     # ── 3. Diversity gradient ────────────────────────────────────────────────
     output$grad_xvar_ui <- renderUI({
       feat <- upload_data$features
@@ -316,7 +415,6 @@ mod_alpha_server <- function(id, upload_data, parent_input) {
     observe({
       req(identical(parent_input$top_nav, "alpha"))   # only while the tab is open
       shinyjs::toggleState("box_download",  !is.null(box_plot_obj()))
-      shinyjs::toggleState("rare_download", !is.null(rare_plot_obj()))
       shinyjs::toggleState("grad_download", !is.null(grad_plot_obj()))
       shinyjs::toggleState("tab_download",  !is.null(diversity_df()))
     })

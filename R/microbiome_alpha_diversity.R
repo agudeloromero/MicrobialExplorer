@@ -199,20 +199,32 @@ calculate_alpha_diversity <- function(ps,
 #' @param diversity_df  Data frame from calculate_alpha_diversity().
 #' @param metrics       Character vector of metrics to plot.
 #' @param group_var     Metadata variable defining groups.
-#' @param test          Statistical test: "wilcox", "kruskal", or "anova".
+#' @param test          "wilcox" (non-parametric) or "t.test" (parametric).
+#'                      Groups are compared two at a time; there is no overall test.
+#' @param paired        TRUE when the same subjects appear in both groups.
+#' @param pair_var      Variable identifying the subject, used when paired = TRUE.
 #' @param p_adjust      P-value adjustment method. Default = "BH" (Benjamini-Hochberg).
 #' @param show_points   Whether to overlay individual sample points. Default = TRUE.
+#' @param comparisons   Which comparisons to draw: "significant" (default), "all"
+#'                      or "none".
 #' @param colour_var    Metadata variable for colouring points. Default = group_var.
-#' @return A patchwork plot combining all metric panels.
+#' @return A list: the combined plot, the per-metric statistics and a label
+#'         describing the test.
 
 plot_alpha_diversity <- function(diversity_df,
                                   metrics    = c("observed", "shannon",
                                                  "simpson",  "pielou"),
                                   group_var  = "group",
-                                  test       = "wilcox",
-                                  p_adjust   = "BH",
+                                  test        = c("wilcox", "t.test"),
+                                  paired      = FALSE,
+                                  pair_var    = NULL,
+                                  p_adjust    = "BH",
                                   show_points = TRUE,
+                                  comparisons = c("significant", "all", "none"),
                                   colour_var  = NULL) {
+
+  test        <- match.arg(test)
+  comparisons <- match.arg(comparisons)
 
   cat("=== Alpha diversity plots ===\n")
 
@@ -242,49 +254,28 @@ plot_alpha_diversity <- function(diversity_df,
   colours  <- group_palette(n_groups)
   names(colours) <- groups
 
-  # --- Statistical test per metric -----------------------------------------
+  # --- Pairwise tests per metric -------------------------------------------
+  if (paired && (is.null(pair_var) || !pair_var %in% colnames(diversity_df))) {
+    pair_var <- NULL
+    paired   <- FALSE
+    warning("No subject variable given, so the groups were compared as unpaired.")
+  }
+
   stat_results <- lapply(metrics, function(m) {
-
-    formula_str <- as.formula(paste(m, "~", group_var))
-
-    if (test == "wilcox" && n_groups == 2) {
-      stat_test <- diversity_df %>%
-        wilcox_test(formula_str) %>%
-        adjust_pvalue(method = p_adjust) %>%
-        add_significance("p.adj")
-
-    } else if (test == "kruskal" || (test == "wilcox" && n_groups > 2)) {
-      # Kruskal overall + pairwise Dunn
-      overall <- kruskal_test(diversity_df, formula_str)
-      stat_test <- diversity_df %>%
-        dunn_test(formula_str, p.adjust.method = p_adjust) %>%
-        add_significance("p.adj")
-      attr(stat_test, "kruskal_p") <- overall$p
-
-    } else if (test == "anova") {
-      stat_test <- diversity_df %>%
-        tukey_hsd(formula_str) %>%
-        add_significance("p.adj")
-
-    } else if (test == "t.test") {
-      stat_test <- diversity_df %>%
-        t_test(formula_str) %>%
-        adjust_pvalue(method = p_adjust) %>%
-        add_significance("p.adj")
-
-    } else {
-      # Fallback — ensure stat_test exists
-      stat_test <- diversity_df %>%
-        wilcox_test(formula_str) %>%
-        adjust_pvalue(method = p_adjust) %>%
-        add_significance("p.adj")
-    }
-
-    stat_test$.metric <- m
-    stat_test
+    alpha_pairwise_tests(diversity_df, metric = m, group_var = group_var,
+                         test = test, paired = paired, pair_var = pair_var,
+                         p_adjust = p_adjust)
   })
-
   names(stat_results) <- metrics
+
+  test_label <- paste0(
+    if (test == "wilcox") {
+      if (paired) "Wilcoxon signed-rank test" else "Wilcoxon rank-sum test"
+    } else {
+      if (paired) "Paired t-test" else "t-test"
+    },
+    " on each pair of groups | ", p_adjust, "-adjusted p-values"
+  )
 
   # --- Build individual metric plots ----------------------------------------
   plots <- lapply(metrics, function(m) {
@@ -322,14 +313,21 @@ plot_alpha_diversity <- function(diversity_df,
       theme_microbiome() +
       theme(axis.text.x = element_text(angle = 30, hjust = 1))
 
-    # Add significance brackets
+    # Add comparison brackets
     stat_df <- stat_results[[m]]
+    if (comparisons == "none") {
+      stat_df <- stat_df[0, , drop = FALSE]
+    } else if (comparisons == "significant") {
+      stat_df <- stat_df %>% filter(!is.na(p.adj) & p.adj < 0.05)
+    } else {
+      stat_df <- stat_df %>% filter(!is.na(p.adj))
+    }
     if (nrow(stat_df) > 0) {
-      sig_df <- stat_df %>% filter(p.adj.signif != "ns")
-      if (nrow(sig_df) > 0) {
+      sig_df <- stat_df
+      {
         p <- p + stat_pvalue_manual(
           sig_df,
-          label      = "p.adj.signif",
+          label      = "label",
           y.position = seq(y_range[2] + y_pad,
                            by = y_pad,
                            length.out = nrow(sig_df)),
@@ -349,8 +347,7 @@ plot_alpha_diversity <- function(diversity_df,
     plot_annotation(
       title    = "Alpha Diversity",
       subtitle = paste0("n = ", nrow(diversity_df), " samples | ",
-                        n_groups, " groups | Test: ", test,
-                        " + ", p_adjust, " correction"),
+                        n_groups, " groups | ", test_label),
       theme    = theme(
         plot.title    = element_text(size = 15, face = "bold"),
         plot.subtitle = element_text(size = 10, colour = "grey40")
@@ -358,7 +355,109 @@ plot_alpha_diversity <- function(diversity_df,
     )
 
   cat("  Plots generated for:", paste(metrics, collapse = ", "), "\n\n")
-  return(list(plot = combined, stats = stat_results))
+  return(list(plot = combined, stats = stat_results, test_label = test_label))
+}
+
+
+#' Compare one alpha diversity metric between every pair of groups.
+#'
+#' Groups are compared two at a time, with no overall test. Pairs that are too
+#' small to test are kept in the table with a note instead of a p-value, and
+#' p-values are adjusted over every pair that could be tested.
+#'
+#' @param diversity_df Data frame from calculate_alpha_diversity().
+#' @param metric       Column holding the metric.
+#' @param group_var    Grouping variable.
+#' @param test         "wilcox" or "t.test".
+#' @param paired       TRUE for repeated measures on the same subjects.
+#' @param pair_var     Subject variable, used when paired = TRUE.
+#' @param p_adjust     P-value adjustment method.
+#' @param min_n        Minimum samples per group (unpaired). Default = 3.
+#' @param min_pairs    Minimum subjects in both groups (paired). Default = 3.
+#' @return A data frame with one row per pair of groups.
+
+alpha_pairwise_tests <- function(diversity_df, metric, group_var,
+                                 test      = c("wilcox", "t.test"),
+                                 paired    = FALSE,
+                                 pair_var  = NULL,
+                                 p_adjust  = "BH",
+                                 min_n     = 3,
+                                 min_pairs = 3) {
+
+  test <- match.arg(test)
+
+  df  <- diversity_df[!is.na(diversity_df[[metric]]) &
+                        !is.na(diversity_df[[group_var]]), , drop = FALSE]
+  lev <- if (is.factor(df[[group_var]])) levels(droplevels(df[[group_var]])) else
+    sort(unique(as.character(df[[group_var]])))
+
+  empty <- data.frame(.metric = character(0), group1 = character(0),
+                      group2 = character(0), n1 = integer(0), n2 = integer(0),
+                      statistic = numeric(0), p = numeric(0),
+                      p.adj = numeric(0), p.adj.signif = character(0),
+                      label = character(0), note = character(0),
+                      stringsAsFactors = FALSE)
+  if (length(lev) < 2) return(empty)
+
+  pairs <- t(utils::combn(lev, 2))
+  out   <- data.frame(.metric = metric, group1 = pairs[, 1], group2 = pairs[, 2],
+                      n1 = NA_integer_, n2 = NA_integer_,
+                      statistic = NA_real_, p = NA_real_, p.adj = NA_real_,
+                      note = "", stringsAsFactors = FALSE)
+
+  for (i in seq_len(nrow(out))) {
+    g1 <- df[as.character(df[[group_var]]) == out$group1[i], , drop = FALSE]
+    g2 <- df[as.character(df[[group_var]]) == out$group2[i], , drop = FALSE]
+
+    if (paired) {
+      s1 <- stats::setNames(g1[[metric]], as.character(g1[[pair_var]]))
+      s2 <- stats::setNames(g2[[metric]], as.character(g2[[pair_var]]))
+      both <- intersect(names(s1), names(s2))
+      out$n1[i] <- out$n2[i] <- length(both)
+      if (length(both) < min_pairs) {
+        out$note[i] <- "too few subjects in both groups"
+        next
+      }
+      res <- try(suppressWarnings(
+        if (test == "wilcox") {
+          stats::wilcox.test(s1[both], s2[both], paired = TRUE)
+        } else {
+          stats::t.test(s1[both], s2[both], paired = TRUE)
+        }), silent = TRUE)
+    } else {
+      out$n1[i] <- nrow(g1); out$n2[i] <- nrow(g2)
+      if (nrow(g1) < min_n || nrow(g2) < min_n) {
+        out$note[i] <- "too few samples to test"
+        next
+      }
+      res <- try(suppressWarnings(
+        if (test == "wilcox") {
+          stats::wilcox.test(g1[[metric]], g2[[metric]])
+        } else {
+          stats::t.test(g1[[metric]], g2[[metric]])
+        }), silent = TRUE)
+    }
+
+    if (inherits(res, "try-error") || is.na(res$p.value)) {
+      out$note[i] <- "test could not be run on these values"
+    } else {
+      out$statistic[i] <- unname(res$statistic)
+      out$p[i]         <- res$p.value
+    }
+  }
+
+  ok <- !is.na(out$p)
+  if (any(ok)) out$p.adj[ok] <- stats::p.adjust(out$p[ok], method = p_adjust)
+
+  out$p.adj.signif <- ifelse(is.na(out$p.adj), "",
+                      ifelse(out$p.adj < 0.001, "***",
+                      ifelse(out$p.adj < 0.01,  "**",
+                      ifelse(out$p.adj < 0.05,  "*", "ns"))))
+  out$label <- ifelse(is.na(out$p.adj), "",
+                      ifelse(out$p.adj < 0.001, "p < 0.001",
+                             paste0("p = ", formatC(out$p.adj, format = "f",
+                                                    digits = 3))))
+  out
 }
 
 
