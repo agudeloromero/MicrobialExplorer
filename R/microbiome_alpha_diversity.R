@@ -369,17 +369,22 @@ plot_alpha_diversity <- function(diversity_df,
 #' Generate individual rarefaction curves showing how richness accumulates.
 #'
 #' @param ps          A phyloseq object (raw counts).
-#' @param step        Rarefaction step size. Default = 500.
+#' @param step        Rarefaction step size in reads. Default = NULL, in which
+#'                    case it is derived from the data so that each curve has
+#'                    n_points depths; very small steps make this very slow.
+#' @param n_points    Number of depths per curve when step is not given.
+#'                    Default = 40.
 #' @param group_var   Metadata variable for colouring curves.
 #' @param show_se     Whether to show standard error ribbon. Default = TRUE.
 #' @param n_iter      Number of iterations per depth. Default = 5.
 #' @return A list: plot and rarefaction data frame.
 
 plot_rarefaction_curves <- function(ps,
-                                     step     = 500,
+                                     step      = NULL,
                                      group_var = NULL,
                                      show_se   = TRUE,
-                                     n_iter    = 5) {
+                                     n_iter    = 5,
+                                     n_points  = 40) {
 
   cat("=== Rarefaction curves per sample ===\n")
 
@@ -389,6 +394,14 @@ plot_rarefaction_curves <- function(ps,
                    dimnames=list(colnames(otu_mat), rownames(otu_mat)))
 
   max_depth <- max(rowSums(otu_t))
+
+  # Deep sequencing with a small step gives thousands of depths, and each one
+  # is rarefied n_iter times for every sample, so the step is derived from the
+  # data unless the caller asks for a specific one.
+  if (is.null(step) || !is.finite(step) || step <= 0) {
+    step <- max(1, ceiling(max_depth / max(2, n_points)))
+  }
+
   depths    <- c(seq(step, max_depth, by = step))
   if (tail(depths, 1) < max_depth) depths <- c(depths, max_depth)
 
