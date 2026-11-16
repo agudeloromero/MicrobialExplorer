@@ -14,15 +14,13 @@ MicrobialExplorer takes a feature table (OTUs or ASVs), with optional taxonomy, 
 
 ## Screenshots
 
-<!-- Save your screenshots in docs/screenshots/ with these file names, or change the paths below. -->
-
 | Home and data input | Quality control |
 |---|---|
-| ![Home page](docs/screenshots/home.png) | ![Quality control](docs/screenshots/qc.png) |
+| ![Home page](docs/home.png) | ![Quality control](docs/qc.png) |
 
 | Composition | F:B ratio with group comparisons |
 |---|---|
-| ![Composition](docs/screenshots/composition.png) | ![F:B ratio](docs/screenshots/fb_ratio.png) |
+| ![Composition](docs/composition.png) | ![F:B ratio](docs/fb_ratio.png) |
 
 ---
 
