@@ -29,6 +29,11 @@ suppressPackageStartupMessages({
   library(forcats)
 })
 
+
+# Shared helpers (fast_tax_glom, group_palette) live in R/utils.R.
+# Load them when this file is sourced on its own, e.g. by the test suite.
+if (!exists("fast_tax_glom") && file.exists("R/utils.R")) source("R/utils.R")
+
 pkg_available <- function(pkg) requireNamespace(pkg, quietly = TRUE)
 
 # Global theme
@@ -388,7 +393,7 @@ plot_pathway_abundance <- function(pathway_mat,
 
   groups   <- unique(summary_df[[group_var]])
   n_groups <- length(groups)
-  colours  <- brewer.pal(max(3, n_groups), "Set2")[seq_len(n_groups)]
+  colours  <- group_palette(n_groups)
   names(colours) <- groups
 
   p <- ggplot(summary_df,
@@ -500,7 +505,7 @@ summarise_kegg_categories <- function(ko_mat,
 
   groups   <- unique(summary_df[[group_var]])
   n_groups <- length(groups)
-  colours  <- brewer.pal(max(3, n_groups), "Set2")[seq_len(n_groups)]
+  colours  <- group_palette(n_groups)
   names(colours) <- groups
 
   # Stacked bar: category composition per group
@@ -587,7 +592,7 @@ analyse_functional_diversity <- function(feature_mat,
 
   groups   <- unique(div_df[[group_var]])
   n_groups <- length(groups)
-  colours  <- brewer.pal(max(3, n_groups), "Set2")[seq_len(n_groups)]
+  colours  <- group_palette(n_groups)
   names(colours) <- groups
 
   # Alpha plot
@@ -935,7 +940,7 @@ plot_functional_heatmap <- function(feature_mat,
   if (!is.null(ann_var)) {
     groups   <- unique(heat_df[[ann_var]])
     n_groups <- length(groups)
-    colours  <- brewer.pal(max(3, n_groups), "Set2")[seq_len(n_groups)]
+    colours  <- group_palette(n_groups)
     names(colours) <- groups
     annot_df <- heat_df %>% dplyr::select(sample, all_of(ann_var)) %>% distinct()
     p_annot  <- ggplot(annot_df, aes(x = sample, y = 1, fill = .data[[ann_var]])) +

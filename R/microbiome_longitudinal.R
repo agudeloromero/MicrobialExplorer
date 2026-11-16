@@ -32,6 +32,11 @@ suppressPackageStartupMessages({
   library(zoo)           # Rolling statistics
 })
 
+
+# Shared helpers (fast_tax_glom, group_palette) live in R/utils.R.
+# Load them when this file is sourced on its own, e.g. by the test suite.
+if (!exists("fast_tax_glom") && file.exists("R/utils.R")) source("R/utils.R")
+
 pkg_available <- function(pkg) requireNamespace(pkg, quietly = TRUE)
 
 # Global theme
@@ -120,7 +125,7 @@ prepare_longitudinal_data <- function(ps,
   }
 
   # --- Agglomerate and transform -------------------------------------------
-  ps_agg    <- tax_glom(ps, taxrank = rank, NArm = FALSE)
+  ps_agg    <- fast_tax_glom(ps, taxrank = rank, NArm = FALSE)
   new_names <- as.character(tax_table(ps_agg)[, rank])
   new_names[is.na(new_names)] <- paste0("Unknown_", seq_len(sum(is.na(new_names))))
   dup_idx   <- duplicated(new_names)
@@ -199,7 +204,7 @@ plot_diversity_trajectories <- function(long_data,
 
   metrics   <- intersect(metrics, colnames(div_df))
   n_groups  <- if (!is.null(group_var)) n_distinct(div_df[[group_var]]) else 1
-  colours   <- brewer.pal(max(3, n_groups), "Set2")[seq_len(n_groups)]
+  colours   <- group_palette(n_groups)
 
   metric_labels <- c(
     shannon  = "Shannon entropy (H')",
@@ -419,7 +424,7 @@ plot_beta_trajectories <- function(long_data,
     arrange(.data[[subj_var]], .data[[time_var]])
 
   n_groups <- if (!is.null(group_var)) n_distinct(pcoa_df[[group_var]]) else 1
-  colours  <- brewer.pal(max(3, n_groups), "Set2")[seq_len(n_groups)]
+  colours  <- group_palette(n_groups)
 
   # Build trajectory segments (arrows between consecutive time points)
   seg_df <- pcoa_df %>%
@@ -730,7 +735,7 @@ analyse_stability <- function(long_data, distance = "bray") {
   cat("\n")
 
   n_groups <- if (!is.null(group_var)) n_distinct(stability_df[[group_var]]) else 1
-  colours  <- brewer.pal(max(3, n_groups), "Set2")[seq_len(n_groups)]
+  colours  <- group_palette(n_groups)
 
   # --- Plot 1: Violin plot of stability per group --------------------------
   p_violin <- ggplot(
@@ -815,7 +820,7 @@ plot_composition_over_time <- function(long_data,
   group_var <- long_data$group_var
 
   # Agglomerate to chosen rank
-  ps_phy    <- tax_glom(ps, taxrank = rank, NArm = FALSE)
+  ps_phy    <- fast_tax_glom(ps, taxrank = rank, NArm = FALSE)
   ps_rel    <- transform_sample_counts(ps_phy, function(x) x / sum(x))
   taxa_names(ps_rel) <- as.character(tax_table(ps_rel)[, rank])
 
@@ -1126,7 +1131,7 @@ analyse_intervention_response <- function(long_data,
     mutate(period = factor(period, levels = c("Pre", "Post")))
 
   n_groups <- if (!is.null(group_var)) n_distinct(div_df[[group_var]]) else 1
-  colours  <- brewer.pal(max(3, n_groups), "Set2")[seq_len(n_groups)]
+  colours  <- group_palette(n_groups)
 
   # --- Per-subject pre vs post paired plot ---------------------------------
   paired_df <- div_df %>%
@@ -1295,7 +1300,7 @@ detect_changepoints <- function(long_data,
   cat("  Changepoints detected:", n_changepoints, "\n\n")
 
   n_groups <- if (!is.null(group_var)) n_distinct(time_summary[[group_var]]) else 1
-  colours  <- brewer.pal(max(3, n_groups), "Set2")[seq_len(n_groups)]
+  colours  <- group_palette(n_groups)
 
   metric_label <- c(
     shannon  = "Shannon entropy (H')",

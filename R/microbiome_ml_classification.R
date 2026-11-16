@@ -34,6 +34,11 @@ suppressPackageStartupMessages({
   library(forcats)
 })
 
+
+# Shared helpers (fast_tax_glom, group_palette) live in R/utils.R.
+# Load them when this file is sourced on its own, e.g. by the test suite.
+if (!exists("fast_tax_glom") && file.exists("R/utils.R")) source("R/utils.R")
+
 pkg_available <- function(pkg) requireNamespace(pkg, quietly = TRUE)
 
 # Global theme
@@ -88,7 +93,7 @@ prepare_ml_data <- function(ps,
   cat("=== Preparing data for machine learning ===\n")
 
   # --- Agglomerate and filter -----------------------------------------------
-  ps_agg   <- tax_glom(ps, taxrank = rank, NArm = FALSE)
+  ps_agg   <- fast_tax_glom(ps, taxrank = rank, NArm = FALSE)
   new_names <- as.character(tax_table(ps_agg)[, rank])
   new_names[is.na(new_names)] <- paste0("Unknown_", seq_len(sum(is.na(new_names))))
   dup_idx  <- duplicated(new_names)
@@ -426,7 +431,7 @@ plot_feature_importance <- function(rf_result    = NULL,
                                   !all(is.na(rf_imp_df$Phylum)))
                                 Phylum else "RF")) +
       geom_col(width = 0.7, alpha = 0.85) +
-      scale_fill_brewer(palette = "Set2",
+      scale_fill_group(
                         name = if ("Phylum" %in% colnames(rf_imp_df)) "Phylum"
                                else NULL) +
       scale_x_continuous(expand = expansion(mult = c(0, 0.1))) +
@@ -764,7 +769,7 @@ plot_confusion_matrix <- function(confusion_matrix,
                   fontface = "bold") +
         geom_hline(yintercept = 0.5, linetype = "dashed",
                    colour = "grey50") +
-        scale_fill_brewer(palette = "Set2", guide = "none") +
+        scale_fill_group(guide = "none") +
         scale_y_continuous(limits = c(0, 1.1), expand = c(0, 0)) +
         labs(
           title = "Performance metrics",
@@ -1016,9 +1021,7 @@ plot_multiclass_roc <- function(ml_data, rf_result) {
   roc_list <- list()
   auc_vals <- c()
 
-  colours  <- brewer.pal(max(3, ml_data$n_classes), "Set2")[
-    seq_len(ml_data$n_classes)
-  ]
+  colours  <- group_palette(ml_data$n_classes)
 
   for (cls in ml_data$labels) {
     y_bin     <- factor(ifelse(y_test == cls, cls, paste0("not_", cls)),
@@ -1050,7 +1053,7 @@ plot_multiclass_roc <- function(ml_data, rf_result) {
     geom_abline(intercept = 0, slope = 1, linetype = "dashed",
                 colour = "grey70") +
     geom_line(linewidth = 1.1, alpha = 0.9) +
-    scale_colour_brewer(palette = "Set2", name = "Class (vs rest)") +
+    scale_colour_group(name = "Class (vs rest)") +
     scale_x_continuous(labels = percent_format(accuracy = 1)) +
     scale_y_continuous(labels = percent_format(accuracy = 1)) +
     coord_equal() +

@@ -32,6 +32,11 @@ suppressPackageStartupMessages({
   library(forcats)
 })
 
+
+# Shared helpers (fast_tax_glom, group_palette) live in R/utils.R.
+# Load them when this file is sourced on its own, e.g. by the test suite.
+if (!exists("fast_tax_glom") && file.exists("R/utils.R")) source("R/utils.R")
+
 pkg_available <- function(pkg) requireNamespace(pkg, quietly = TRUE)
 
 # Global theme
@@ -100,7 +105,7 @@ prepare_network_data <- function(ps,
   }
 
   # Agglomerate to rank
-  ps_agg <- tax_glom(ps, taxrank = rank, NArm = FALSE)
+  ps_agg <- fast_tax_glom(ps, taxrank = rank, NArm = FALSE)
   new_names <- as.character(tax_table(ps_agg)[, rank])
   new_names[is.na(new_names)] <- paste0("Unknown_", seq_len(sum(is.na(new_names))))
   dup_idx <- duplicated(new_names)
@@ -458,7 +463,7 @@ plot_network <- function(g,
             fill   = as.factor(.data[[colour_by]])),
         shape = 21, colour = "white", stroke = 0.4, alpha = 0.9
       ) +
-      scale_fill_brewer(palette = "Set2",
+      scale_fill_group(
                         name   = str_to_title(colour_by)) +
       scale_size(range = c(2, 10), name = str_to_title(size_by))
   }
@@ -603,7 +608,7 @@ analyse_hub_taxa <- function(g, node_df, top_n = 20) {
                                 Phylum else "Hub")) +
     geom_col(width = 0.7, alpha = 0.85) +
     geom_vline(xintercept = 0, linewidth = 0.6) +
-    scale_fill_brewer(palette = "Set2",
+    scale_fill_group(
                       name = "Phylum") +
     labs(
       title    = paste0("Top ", top_n, " hub taxa"),
@@ -903,7 +908,7 @@ compare_networks <- function(ps,
                       aes(x = Group, y = Value, fill = Group)) +
     geom_col(width = 0.6, alpha = 0.85) +
     facet_wrap(~ Metric, scales = "free_y", ncol = 3) +
-    scale_fill_brewer(palette = "Set2", guide = "none") +
+    scale_fill_group(guide = "none") +
     labs(
       title    = "Network topology comparison",
       subtitle = paste0(group1, " vs ", group2),
@@ -925,7 +930,7 @@ compare_networks <- function(ps,
                                        fill = category)) +
     geom_col(width = 0.6, alpha = 0.85) +
     geom_text(aes(label = count), vjust = -0.4, fontface = "bold", size = 4) +
-    scale_fill_brewer(palette = "Set2", guide = "none") +
+    scale_fill_group(guide = "none") +
     scale_y_continuous(expand = expansion(mult = c(0, 0.15))) +
     labs(
       title = "Edge distribution between networks",
