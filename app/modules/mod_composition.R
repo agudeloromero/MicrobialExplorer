@@ -623,7 +623,7 @@ mod_composition_ui <- function(id) {
       value = "table",
 
       layout_columns(
-        col_widths = c(3, 9),
+        col_widths = c(3, 9, 12),
 
         card(
           class = "border-0 bg-light",
@@ -642,6 +642,64 @@ mod_composition_ui <- function(id) {
           card_body(
             tags$h6(class = "fw-bold mb-2", "Overall abundance summary"),
             DT::dataTableOutput(ns("abund_table"))
+          )
+        ),
+
+        # Help
+        card(
+          card_header(icon("circle-info"), " How to read this tab"),
+          card_body(
+            class = "small",
+            layout_columns(
+              col_widths = c(6, 6),
+              tags$div(
+                tags$h6(class = "fw-bold", "What the columns mean"),
+                tags$ul(
+                  tags$li(tags$strong("One row per taxon "),
+                          "at the rank you choose, summarising every sample in the ",
+                          "dataset. The lineage column gives the full path from kingdom ",
+                          "down, which separates taxa that share a short name."),
+                  tags$li(tags$strong("Mean % "),
+                          "is the average relative abundance across samples. Each sample ",
+                          "counts once, whatever its sequencing depth, so a deeply ",
+                          "sequenced sample does not dominate."),
+                  tags$li(tags$strong("SD % "),
+                          "is how much that percentage varies between samples. A large SD ",
+                          "next to a small mean means the taxon is uneven across samples."),
+                  tags$li(tags$strong("Median % "),
+                          "is the middle sample. When the mean is far above the median, a ",
+                          "few samples carry the taxon and the mean is not typical of the ",
+                          "dataset."),
+                  tags$li(tags$strong("Prev % and N samples "),
+                          "count the samples where the taxon has at least one read. This ",
+                          "is detection at any level, not the abundance threshold used in ",
+                          "the Core microbiome tab, so the two prevalences are not ",
+                          "comparable.")
+                )
+              ),
+              tags$div(
+                tags$h6(class = "fw-bold", "How to use it"),
+                tags$ul(
+                  tags$li(tags$strong("Sort and search. "),
+                          "Click any column header to sort, and use the search box to find ",
+                          "a taxon or a whole lineage, for example all Firmicutes."),
+                  tags$li(tags$strong("Read mean against median. "),
+                          "Similar values mean the taxon is spread evenly; a high mean with ",
+                          "a near-zero median points to a bloom in one or two samples, ",
+                          "which is worth checking before reporting it."),
+                  tags$li(tags$strong("Two downloads. "),
+                          "\"Overall\" gives this table. \"By group\" gives mean, SD and ",
+                          "prevalence per taxon within each group of your group variable, ",
+                          "which is the table most supplementary files need."),
+                  tags$li(tags$strong("These are descriptive numbers, not a test. "),
+                          "A difference between groups here says nothing about significance; ",
+                          "use the Differential abundance tab for that."),
+                  tags$li(tags$strong("The numbers follow your QC. "),
+                          "Taxa removed by the QC filter are not in this table, and ",
+                          "percentages are recalculated on what is left.")
+                )
+              )
+            )
           )
         )
       )
