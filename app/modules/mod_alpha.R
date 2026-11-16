@@ -12,6 +12,7 @@ mod_alpha_ui <- function(id) {
     # ── 1. Boxplots ─────────────────────────────────────────────────────────
     nav_panel(
       title = tagList(icon("chart-simple"), " Boxplots"),
+      value = "box",
       layout_sidebar(
         sidebar = sidebar(
           width = 320, open = "always",
@@ -48,14 +49,22 @@ mod_alpha_ui <- function(id) {
     # ── 2. Rarefaction curves ────────────────────────────────────────────────
     nav_panel(
       title = tagList(icon("chart-line"), " Rarefaction"),
+      value = "rare",
       layout_sidebar(
         sidebar = sidebar(
           width = 320, open = "always",
           tags$h6("Parameters"),
-          numericInput(ns("rare_step"), "Step size",
-                       value = 500, min = 100, max = 5000, step = 100),
-          numericInput(ns("rare_n_iter"), "Iterations per step",
+          numericInput(ns("rare_points"), "Points per curve",
+                       value = 20, min = 5, max = 100, step = 5),
+          numericInput(ns("rare_n_iter"), "Iterations per point",
                        value = 3, min = 1, max = 10, step = 1),
+          actionButton(ns("run_rarefaction"),
+                       label = tagList(icon("play"), " Draw curves"),
+                       class = "btn btn-primary btn-sm w-100 mb-2"),
+          tags$p(class = "text-muted small",
+                 "These curves are slow on deeply sequenced data, so they are ",
+                 "only computed when you ask. More points and more iterations ",
+                 "give smoother curves and take longer."),
           hr(),
           downloadButton(ns("rare_download"), "Download plot",
                          class = "btn btn-outline-secondary btn-sm w-100",
@@ -68,6 +77,7 @@ mod_alpha_ui <- function(id) {
     # ── 3. Diversity gradient ────────────────────────────────────────────────
     nav_panel(
       title = tagList(icon("chart-area"), " Gradient"),
+      value = "gradient",
       layout_sidebar(
         sidebar = sidebar(
           width = 320, open = "always",
@@ -99,6 +109,7 @@ mod_alpha_ui <- function(id) {
     # ── 4. Diversity table ───────────────────────────────────────────────────
     nav_panel(
       title = tagList(icon("table"), " Table"),
+      value = "table",
       layout_sidebar(
         sidebar = sidebar(
           width = 280, open = "always",
@@ -194,22 +205,30 @@ mod_alpha_server <- function(id, upload_data, parent_input) {
     )
 
     # ── 2. Rarefaction curves ────────────────────────────────────────────────
-    rare_plot_obj <- reactive({
+    # Curves are the slowest step in this module and would hold up every other
+    # plot, so they wait for the button on their own sub-tab
+    rare_plot_obj <- eventReactive(input$run_rarefaction, {
       req(ps_work())
       gv <- group_var()
-      tryCatch(
-        plot_rarefaction_curves(ps_work(),
-                                step      = input$rare_step,
-                                n_iter    = input$rare_n_iter,
-                                group_var = gv),
-        error = function(e) {
-          message("[mod_alpha] rarefaction error: ", e$message)
-          NULL
-        }
-      )
+      n_points <- input$rare_points
+      if (is.null(n_points) || is.na(n_points)) n_points <- 20
+      withProgress(message = "Computing rarefaction curves", value = 0.3, {
+        tryCatch(
+          plot_rarefaction_curves(ps_work(),
+                                  n_points  = n_points,
+                                  n_iter    = input$rare_n_iter,
+                                  group_var = gv),
+          error = function(e) {
+            message("[mod_alpha] rarefaction error: ", e$message)
+            NULL
+          }
+        )
+      })
     })
 
     output$rare_plot <- renderPlot({
+      validate(need(input$run_rarefaction > 0,
+                    "Choose the settings and click 'Draw curves'."))
       req(rare_plot_obj())
       rare_plot_obj()
     })
