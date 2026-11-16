@@ -28,14 +28,16 @@ mod_alpha_ui <- function(id) {
                          "Faith's PD"        = "faith_pd"),
             selected = c("observed", "shannon", "simpson", "pielou")
           ),
-          selectInput(ns("box_test"), "Statistical test",
-                      choices  = c("Non-parametric (Wilcoxon)" = "wilcox",
-                                   "Parametric (t-test)"       = "t.test"),
-                      selected = "wilcox"),
-          selectInput(ns("box_design"), "Sample design",
-                      choices  = c("Unpaired (independent samples)" = "unpaired",
-                                   "Paired (same subjects in each group)" = "paired"),
-                      selected = "unpaired"),
+          selectInput(
+            ns("box_test"), "Statistical test",
+            choices = c(
+              "Wilcoxon rank-sum (non-parametric, unpaired)"   = "wilcox_unpaired",
+              "Wilcoxon signed-rank (non-parametric, paired)"  = "wilcox_paired",
+              "Welch's t-test (parametric, unpaired)"          = "ttest_unpaired",
+              "Paired t-test (parametric, paired)"             = "ttest_paired"
+            ),
+            selected = "wilcox_unpaired"
+          ),
           uiOutput(ns("box_pair_ui")),
           selectInput(ns("box_comparisons"), "Comparisons on the plot",
                       choices  = c("Significant only" = "significant",
@@ -212,9 +214,19 @@ mod_alpha_server <- function(id, upload_data, parent_input) {
     })
 
     # ── 1. Boxplots ──────────────────────────────────────────────────────────
-    # Subject variable, shown only for the paired design
+    # The chosen test, split into the two things the analysis needs
+    box_test_kind <- reactive({
+      v <- input$box_test
+      if (is.null(v)) v <- "wilcox_unpaired"
+      list(
+        test   = if (startsWith(v, "wilcox")) "wilcox" else "t.test",
+        paired = endsWith(v, "_paired")
+      )
+    })
+
+    # Subject variable, shown only for the paired tests
     output$box_pair_ui <- renderUI({
-      req(identical(input$box_design, "paired"), upload_data$ps)
+      req(box_test_kind()$paired, upload_data$ps)
       meta_df <- data.frame(sample_data(upload_data$ps), check.names = FALSE)
       gv      <- group_var()
       n_uni   <- vapply(meta_df, function(x) length(unique(stats::na.omit(x))),
@@ -258,14 +270,14 @@ mod_alpha_server <- function(id, upload_data, parent_input) {
       req(diversity_df())
       gv <- group_var()
       req(gv, length(input$box_metrics) > 0)
-      paired <- identical(input$box_design, "paired")
+      paired <- box_test_kind()$paired
       pv     <- if (paired) input$box_pair_var else NULL
       if (paired && (is.null(pv) || !nzchar(pv))) return(NULL)
       tryCatch({
         plot_alpha_diversity(diversity_df(),
                              metrics     = input$box_metrics,
                              group_var   = gv,
-                             test        = input$box_test,
+                             test        = box_test_kind()$test,
                              paired      = paired,
                              pair_var    = pv,
                              comparisons = input$box_comparisons,
@@ -280,8 +292,7 @@ mod_alpha_server <- function(id, upload_data, parent_input) {
       updateCheckboxGroupInput(session, "box_metrics",
                                selected = c("observed", "shannon",
                                             "simpson", "pielou"))
-      updateSelectInput(session, "box_test", selected = "wilcox")
-      updateSelectInput(session, "box_design", selected = "unpaired")
+      updateSelectInput(session, "box_test", selected = "wilcox_unpaired")
       updateSelectInput(session, "box_comparisons", selected = "significant")
       updateCheckboxInput(session, "box_points", value = TRUE)
     })
@@ -292,9 +303,9 @@ mod_alpha_server <- function(id, upload_data, parent_input) {
     })
 
     output$box_plot <- renderPlot({
-      validate(need(!identical(input$box_design, "paired") ||
+      validate(need(!box_test_kind()$paired ||
                       (!is.null(input$box_pair_var) && nzchar(input$box_pair_var)),
-                    "Choose the variable that identifies the subject."))
+                    "This test compares the same subjects in both groups. Choose the variable that identifies the subject."))
       req(box_plot_obj())
       box_plot_obj()
     })
