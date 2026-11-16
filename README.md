@@ -8,7 +8,7 @@
 
 MicrobialExplorer takes a feature table (OTUs or ASVs), with optional taxonomy, sample metadata and a phylogenetic tree, and guides you through a complete analysis in the browser. Every parameter sits next to the plot it affects, so you can change a value, see what happens to your results, and decide which settings suit your data.
 
-> **Status:** version 1.0, under active development. The app currently supports 16S rRNA amplicon data. Support for shotgun metagenomics, virome and longitudinal data is planned (see [Roadmap](#roadmap)).
+> **Status:** version 1.0, under development. The app currently supports 16S rRNA amplicon data. Support for shotgun metagenomics, virome and longitudinal data is planned (see [Roadmap](#roadmap)).
 
 ---
 
