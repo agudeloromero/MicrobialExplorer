@@ -510,6 +510,7 @@ mod_composition_ui <- function(id) {
           class = "border-0 bg-light",
           card_body(
             tags$h6(class = "fw-bold", "Parameters"),
+            uiOutput(ns("core_scope_ui")),
             numericInput(ns("core_min_abund"),
                          "Min relative abundance",
                          value = 0.001, min = 0.0001, max = 0.01,
@@ -593,9 +594,21 @@ mod_composition_ui <- function(id) {
                           "Nothing is removed here. The QC filter decides which taxa are ",
                           "kept for every analysis; this tab describes the taxa that ",
                           "survived it."),
-                  tags$li(tags$strong("Groups: "),
-                          "with a group variable selected, each group gets its own panel, ",
-                          "so you can see which taxa are core in one group and not in another.")
+                  tags$li(tags$strong("Two ways to count. "),
+                          "\"Across all samples\" asks how often a taxon appears in the ",
+                          "whole dataset, which is the usual definition of a cohort's core. ",
+                          "\"Within each group\" counts inside each group, so a taxon can ",
+                          "be core in one condition and absent from another. When the ",
+                          "groups differ a lot, or one group is much larger than the ",
+                          "others, the pooled core is dominated by the biggest or most ",
+                          "similar samples, and can even be empty."),
+                  tags$li(tags$strong("Watch the sample size "),
+                          "in each panel title. With four samples, prevalence can only be ",
+                          "25, 50, 75 or 100%, so 75% and 90% select the same taxa and ",
+                          "moving the slider between them changes nothing."),
+                  tags$li(tags$strong("The taxa count by group "),
+                          "is the number of taxa that are core in at least one group, not ",
+                          "in all of them.")
                 )
               )
             )
@@ -1055,6 +1068,20 @@ mod_composition_server <- function(id, upload_data, ps_qc, parent_input) {
     )
 
     # ── 5. CORE MICROBIOME ────────────────────────────────────────────────
+    # The scope selector only means something when a group variable is set
+    output$core_scope_ui <- renderUI({
+      req(group_var())
+      selectInput(ns("core_scope"), "Compute core",
+                  choices = c("Within each group (panels)" = "group",
+                              "Across all samples (one panel)" = "all"),
+                  selected = "group")
+    })
+
+    core_scope <- reactive({
+      if (is.null(group_var())) return("all")
+      if (is.null(input$core_scope)) "group" else input$core_scope
+    })
+
     core_result <- reactive({
       req(ps_work(), input$core_min_abund, input$core_prev)
       label_n <- input$core_label_n
@@ -1064,13 +1091,20 @@ mod_composition_server <- function(id, upload_data, ps_qc, parent_input) {
                                  prevalence_cuts = c(0.5, 0.75, 0.9),
                                  core_threshold  = input$core_prev / 100,
                                  min_abundance   = input$core_min_abund,
-                                 group_var       = group_var(),
+                                 group_var       = if (identical(core_scope(), "group")) {
+                                                     group_var()
+                                                   } else {
+                                                     NULL
+                                                   },
                                  label_n         = label_n),
         error = function(e) { message("[mod_comp] core: ", e$message); NULL }
       )
     })
 
     observeEvent(input$core_reset, {
+      if (!is.null(group_var())) {
+        updateSelectInput(session, "core_scope", selected = "group")
+      }
       updateNumericInput(session, "core_min_abund", value = 0.001)
       updateSliderInput(session, "core_prev", value = 75)
       updateNumericInput(session, "core_label_n", value = 5)
@@ -1078,8 +1112,16 @@ mod_composition_server <- function(id, upload_data, ps_qc, parent_input) {
 
     output$core_heading <- renderUI({
       thr <- if (is.null(input$core_prev)) 75 else input$core_prev
-      tags$h6(class = "fw-bold",
-              paste0("Core taxa (\u2265 ", thr, "% of samples)"))
+      tagList(
+        tags$h6(class = "fw-bold mb-0",
+                paste0("Core taxa (\u2265 ", thr, "% of samples)")),
+        tags$p(class = "text-muted small mb-2",
+               if (identical(core_scope(), "group")) {
+                 "Core in at least one group"
+               } else {
+                 "Across all samples together"
+               })
+      )
     })
 
     output$core_plot <- renderPlot({
@@ -1126,6 +1168,11 @@ mod_composition_server <- function(id, upload_data, ps_qc, parent_input) {
     core_detail_df <- reactive({
       req(core_result())
       d  <- core_result()$core_detail
+      if (is.null(d) || nrow(d) == 0) {
+        return(data.frame(Taxon = character(0), Prevalence = character(0),
+                          `Mean abundance` = character(0),
+                          check.names = FALSE))
+      }
       df <- data.frame(
         Taxon            = d$taxon,
         Group            = d$group,

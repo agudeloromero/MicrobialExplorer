@@ -1298,6 +1298,7 @@ identify_core_microbiome <- function(ps,
       prevalence = rowSums(otu_mat >= min_abundance) / ncol(otu_mat),
       mean_abund = rowMeans(otu_mat),
       group      = label,
+      n_samples  = ncol(otu_mat),
       stringsAsFactors = FALSE
     )
     return(prev_df)
@@ -1314,6 +1315,12 @@ identify_core_microbiome <- function(ps,
   } else {
     prev_df <- compute_core(ps_gen, label = "All")
   }
+
+  # Panel titles carry the number of samples, since prevalence can only take
+  # as many values as there are samples in the group
+  prev_df$panel <- paste0(ifelse(prev_df$group == "All", "All samples",
+                                 prev_df$group),
+                          " (n = ", prev_df$n_samples, ")")
 
   # Core at each threshold
   core_summary <- lapply(prevalence_cuts, function(cut) {
@@ -1356,7 +1363,7 @@ identify_core_microbiome <- function(ps,
   # Taxa whose names are written on the plot: the most abundant core taxa
   # (per panel when the samples are split into groups)
   label_df <- prev_plot_df %>% filter(core)
-  if (has_groups) label_df <- label_df %>% group_by(group)
+  if (has_groups) label_df <- label_df %>% group_by(panel)
   label_df <- label_df %>%
     arrange(desc(mean_abund)) %>%
     slice_head(n = max(0, label_n)) %>%
@@ -1369,7 +1376,7 @@ identify_core_microbiome <- function(ps,
                         name   = "Status", drop = FALSE) +
     # One panel per group, so a taxon can be core in one group and not in another
     {
-      if (has_groups) facet_wrap(~ group) else NULL
+      if (has_groups) facet_wrap(~ panel) else NULL
     } +
     # Threshold lines
     geom_vline(xintercept = cuts,
@@ -1389,7 +1396,8 @@ identify_core_microbiome <- function(ps,
       title    = "Core microbiome — prevalence vs abundance",
       subtitle = paste0("Present at \u2265 ", min_abundance * 100,
                         "% abundance | core = \u2265 ", core_threshold * 100,
-                        "% of samples"),
+                        "% of samples",
+                        if (has_groups) " of its group" else ""),
       x        = "Prevalence (fraction of samples)",
       y        = "Log10 mean relative abundance"
     ) +
