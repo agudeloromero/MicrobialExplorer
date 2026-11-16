@@ -504,33 +504,101 @@ mod_composition_ui <- function(id) {
       value = "core",
 
       layout_columns(
-        col_widths = c(3, 9),
+        col_widths = c(3, 9, 12),
 
         card(
           class = "border-0 bg-light",
           card_body(
             tags$h6(class = "fw-bold", "Parameters"),
-            tags$p(class = "text-muted small",
-                   "Taxa present at ≥ min abundance in the given fraction of samples."),
             numericInput(ns("core_min_abund"),
                          "Min relative abundance",
                          value = 0.001, min = 0.0001, max = 0.01,
                          step = 0.0005),
+            sliderInput(ns("core_prev"),
+                        "Core: present in at least",
+                        min = 50, max = 100, value = 75, step = 5,
+                        post = "% of samples"),
+            numericInput(ns("core_label_n"),
+                         "Names shown on the plot (per panel)",
+                         value = 5, min = 0, max = 30, step = 5),
+            actionButton(ns("core_reset"),
+                         label = tagList(icon("rotate-left"), " Reset to defaults"),
+                         class = "btn btn-outline-secondary btn-sm w-100"),
             hr(),
-            tags$h6(class = "fw-bold", "Core taxa (≥ 75% samples)"),
+            uiOutput(ns("core_heading")),
             uiOutput(ns("core_taxa_list")),
             hr(),
             downloadButton(ns("dl_core"), "Download plot",
+                           class = "btn btn-outline-secondary btn-sm w-100 mb-2"),
+            downloadButton(ns("dl_core_table"), "Download core taxa",
                            class = "btn btn-outline-secondary btn-sm w-100")
           )
         ),
 
         card(
           card_body(
-            plotOutput(ns("core_plot"), height = "500px"),
+            uiOutput(ns("core_plot_ui")),
             hr(),
-            tags$h6(class = "fw-bold mt-2", "Core summary table"),
+            tags$h6(class = "fw-bold mt-2", "Core taxa"),
+            tags$p(class = "text-muted small mb-1",
+                   "Every taxon above the threshold, including those with no name on the plot."),
+            DT::dataTableOutput(ns("core_detail_table")),
+            hr(),
+            tags$h6(class = "fw-bold mt-2", "Core size at other thresholds"),
             DT::dataTableOutput(ns("core_table"))
+          )
+        ),
+
+        # Help
+        card(
+          card_header(icon("circle-info"), " How to read this tab"),
+          card_body(
+            class = "small",
+            layout_columns(
+              col_widths = c(6, 6),
+              tags$div(
+                tags$h6(class = "fw-bold", "What is shown"),
+                tags$ul(
+                  tags$li(tags$strong("The core microbiome: "),
+                          "the taxa found in most of your samples, as opposed to those ",
+                          "appearing in only a few. It describes what the samples have ",
+                          "in common."),
+                  tags$li(tags$strong("Each dot is a taxon "),
+                          "at the chosen rank. Horizontal position: in what fraction of ",
+                          "samples it reaches the minimum abundance. Vertical position: ",
+                          "its mean relative abundance across samples, on a log scale, ",
+                          "so -2 means 1% and -3 means 0.1%."),
+                  tags$li(tags$strong("Red dots "),
+                          "are the core taxa at your threshold; grey dots are the rest. ",
+                          "The dashed lines mark 50%, 75% and 90% for reference."),
+                  tags$li(tags$strong("Names on the plot: "),
+                          "only the most abundant core taxa are named, to keep the plot ",
+                          "readable. The full list is in the table below and in the ",
+                          "downloadable file.")
+                )
+              ),
+              tags$div(
+                tags$h6(class = "fw-bold", "How to use it"),
+                tags$ul(
+                  tags$li(tags$strong("Two settings define the core. "),
+                          "A taxon counts as present in a sample when it reaches the ",
+                          "minimum relative abundance (0.1% by default), and it joins the ",
+                          "core when it is present in at least the chosen fraction of ",
+                          "samples (75% by default). Published definitions vary, so state ",
+                          "both numbers in your methods."),
+                  tags$li(tags$strong("Move the threshold to test how solid the core is. "),
+                          "A core that barely changes between 75% and 90% is robust; one ",
+                          "that collapses depends on a few samples."),
+                  tags$li(tags$strong("This is not the QC taxa filter. "),
+                          "Nothing is removed here. The QC filter decides which taxa are ",
+                          "kept for every analysis; this tab describes the taxa that ",
+                          "survived it."),
+                  tags$li(tags$strong("Groups: "),
+                          "with a group variable selected, each group gets its own panel, ",
+                          "so you can see which taxa are core in one group and not in another.")
+                )
+              )
+            )
           )
         )
       )
@@ -988,14 +1056,30 @@ mod_composition_server <- function(id, upload_data, ps_qc, parent_input) {
 
     # ── 5. CORE MICROBIOME ────────────────────────────────────────────────
     core_result <- reactive({
-      req(ps_work(), input$core_min_abund)
+      req(ps_work(), input$core_min_abund, input$core_prev)
+      label_n <- input$core_label_n
+      if (is.null(label_n) || is.na(label_n)) label_n <- 5
       tryCatch(
         identify_core_microbiome(ps_work(),
                                  prevalence_cuts = c(0.5, 0.75, 0.9),
+                                 core_threshold  = input$core_prev / 100,
                                  min_abundance   = input$core_min_abund,
-                                 group_var       = group_var()),
+                                 group_var       = group_var(),
+                                 label_n         = label_n),
         error = function(e) { message("[mod_comp] core: ", e$message); NULL }
       )
+    })
+
+    observeEvent(input$core_reset, {
+      updateNumericInput(session, "core_min_abund", value = 0.001)
+      updateSliderInput(session, "core_prev", value = 75)
+      updateNumericInput(session, "core_label_n", value = 5)
+    })
+
+    output$core_heading <- renderUI({
+      thr <- if (is.null(input$core_prev)) 75 else input$core_prev
+      tags$h6(class = "fw-bold",
+              paste0("Core taxa (\u2265 ", thr, "% of samples)"))
     })
 
     output$core_plot <- renderPlot({
@@ -1003,11 +1087,25 @@ mod_composition_server <- function(id, upload_data, ps_qc, parent_input) {
       core_result()$plot
     })
 
+    # Taller plot when the samples are split into several panels
+    output$core_plot_ui <- renderUI({
+      req(core_result())
+      n_groups <- length(unique(core_result()$prevalence$group))
+      height   <- if (n_groups > 1) {
+        min(1100, 300 + ceiling(n_groups / 3) * 210)
+      } else {
+        520
+      }
+      plotOutput(ns("core_plot"), height = paste0(height, "px"))
+    })
+
     output$core_taxa_list <- renderUI({
       req(core_result())
       core_t <- core_result()$core_taxa
       if (length(core_t) == 0) {
-        tags$span(class = "text-muted small", "No core taxa at 75% threshold")
+        tags$span(class = "text-muted small",
+                  paste0("No taxon reaches this threshold. Lower the percentage ",
+                         "or the minimum abundance."))
       } else {
         tagList(
           tags$span(class = "badge bg-success mb-1",
@@ -1024,6 +1122,41 @@ mod_composition_server <- function(id, upload_data, ps_qc, parent_input) {
         )
       }
     })
+
+    core_detail_df <- reactive({
+      req(core_result())
+      d  <- core_result()$core_detail
+      df <- data.frame(
+        Taxon            = d$taxon,
+        Group            = d$group,
+        Prevalence       = paste0(round(d$prevalence * 100, 1), "%"),
+        `Mean abundance` = paste0(signif(d$mean_abund * 100, 3), "%"),
+        check.names = FALSE, stringsAsFactors = FALSE
+      )
+      # The group column is only meaningful when groups were used
+      if (length(unique(d$group)) <= 1) df$Group <- NULL
+      df
+    })
+
+    output$core_detail_table <- DT::renderDataTable({
+      DT::datatable(core_detail_df(), rownames = FALSE,
+                    class = "compact hover small",
+                    options = list(dom = "ftp", pageLength = 10))
+    })
+
+    output$dl_core_table <- downloadHandler(
+      filename = function() paste0("core_taxa_", Sys.Date(), ".csv"),
+      content  = function(file) {
+        req(core_result())
+        out <- core_result()$core_detail
+        out$prevalence_pct     <- round(out$prevalence * 100, 1)
+        out$mean_abundance_pct <- signif(out$mean_abund * 100, 4)
+        out$core_threshold_pct <- core_result()$core_threshold * 100
+        write.csv(out[, c("taxon", "group", "prevalence_pct",
+                          "mean_abundance_pct", "core_threshold_pct")],
+                  file, row.names = FALSE)
+      }
+    )
 
     output$core_table <- DT::renderDataTable({
       req(core_result())
